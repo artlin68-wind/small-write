@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>研華(2395) 投資分析報告 2026/06/17</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Microsoft JhengHei',Arial,sans-serif;background:#f5f7fb;color:#333;padding:24px;max-width:980px;margin:0 auto}
+  h1{background:linear-gradient(135deg,#1a3a6b,#2d6abf);color:white;padding:22px 28px;border-radius:12px;margin-bottom:6px;font-size:22px}
+  .subtitle{color:#888;font-size:13px;margin-bottom:20px;padding:0 4px}
+  .verdict-pass{background:#e8f5e9;border:2.5px solid #27ae60;padding:18px 22px;border-radius:10px;margin:16px 0}
+  .verdict-pass h2{color:#1b5e20;font-size:16px;margin-bottom:6px}
+  .verdict-pass p{color:#2e7d32;font-size:13.5px;line-height:1.6}
+  .section{background:white;border:1px solid #dde2f0;border-radius:10px;padding:20px 24px;margin:16px 0;box-shadow:0 1px 5px rgba(0,0,0,.05)}
+  .section-title{color:#1a3a6b;font-size:15px;font-weight:700;border-bottom:2px solid #2d6abf;padding-bottom:8px;margin-bottom:16px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:8px}
+  th{background:#2d6abf;color:white;padding:10px 14px;text-align:left;font-weight:600}
+  td{padding:10px 14px;border-bottom:1px solid #eef0f8}
+  tr:nth-child(even){background:#f8f9ff}
+  tr.highlight{background:#fffbe6;font-weight:bold}
+  tr.warn{background:#fff5f5}
+  .badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600}
+  .badge-green{background:#e8f5e9;color:#2e7d32}
+  .badge-red{background:#fde8e8;color:#c02020}
+  .badge-yellow{background:#fffbe6;color:#8a6d00}
+  .badge-blue{background:#e3f2fd;color:#1a3a6b}
+  .flag-box{background:#fff5f5;border:1.5px dashed #e05252;padding:14px 18px;border-radius:8px;margin:10px 0;font-size:13px}
+  .pass-box{background:#e8f5e9;border:1.5px solid #27ae60;padding:12px 18px;border-radius:8px;margin:10px 0;font-size:13px;color:#155724}
+  .info-box{background:#e3f2fd;border:1px solid #90caf9;padding:12px 18px;border-radius:8px;margin:10px 0;font-size:13px;color:#1a3a6b}
+  .orange-box{background:#fff8f0;border:1.5px solid #e67e22;padding:14px 18px;border-radius:8px;margin:10px 0}
+  .purple-box{background:#f5f0ff;border:1.5px solid #7c3aed;padding:14px 18px;border-radius:8px;margin:10px 0}
+  .metric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:12px 0}
+  .metric-card{background:#f8f9ff;border:1px solid #dde2f0;border-radius:8px;padding:14px;text-align:center}
+  .metric-label{font-size:11px;color:#888;margin-bottom:4px}
+  .metric-value{font-size:20px;font-weight:700;color:#1a3a6b}
+  .metric-sub{font-size:11px;color:#888;margin-top:2px}
+  .step-header{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  .step-num{background:#2d6abf;color:white;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;white-space:nowrap}
+  .step-num.green{background:#27ae60}
+  .step-num.orange{background:#e67e22}
+  .step-num.purple{background:#7c3aed}
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .eps-bar-wrap{margin:10px 0}
+  .eps-row{display:flex;align-items:center;gap:10px;margin:5px 0;font-size:13px}
+  .eps-label{width:50px;text-align:right;color:#555}
+  .eps-bar{height:22px;border-radius:4px;display:flex;align-items:center;padding:0 8px;color:white;font-weight:600;font-size:12px;min-width:30px}
+  .scenario-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin:12px 0}
+  .scenario-card{border-radius:8px;padding:14px;text-align:center;border:1.5px solid}
+  .sc-conservative{background:#f8f9ff;border-color:#aabbdd}
+  .sc-base{background:#fff8f0;border-color:#e67e22}
+  .sc-optimistic{background:#f0fff4;border-color:#27ae60}
+  .sc-title{font-size:12px;font-weight:600;margin-bottom:8px;color:#555}
+  .sc-eps{font-size:22px;font-weight:700;margin:4px 0}
+  .sc-div{font-size:14px;font-weight:600;margin:2px 0}
+  .sc-yield{font-size:12px;color:#888}
+  .chip-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #f0f0f0}
+  .chip-label{font-size:13px;color:#555}
+  .chip-val{font-size:16px;font-weight:700}
+  .chip-change{font-size:12px}
+  .positive{color:#27ae60}
+  .negative{color:#c02020}
+  .warning{color:#e67e22}
+  .risk-item{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid #f5f5f5;font-size:13px;align-items:flex-start}
+  .risk-icon{font-size:16px;margin-top:1px}
+  footer{text-align:center;color:#bbb;font-size:11.5px;margin-top:32px;padding:20px;border-top:1px solid #eee;line-height:1.8}
+  @media(max-width:640px){.metric-grid{grid-template-columns:repeat(2,1fr)}.two-col{grid-template-columns:1fr}.scenario-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<h1>📊 研華科技（2395）投資分析報告</h1>
+<p class="subtitle">分析日期：2026/06/17　｜　投資預算：100萬台幣　｜　依9步驟完整流程分析</p>
+
+<!-- VERDICT -->
+<div class="verdict-pass">
+  <h2>✅ 綜合判斷：建議考慮長期投資</h2>
+  <p>研華科技為全球工業電腦龍頭，AIoT / Edge AI 長期受益者，財務體質優良，連續29年配息紀錄。2024年曾歷經庫存調整致EPS衰退，但2025年已回升創高，2026年訂單B/B值達1.8，營收動能強勁。股價473元估值偏高（P/E約38倍），建議分批佈局，長期持有。</p>
+</div>
+
+<!-- STEP 1-2 -->
+<div class="section">
+  <div class="step-header"><span class="step-num">STEP 1–2</span><span class="section-title">基本資料</span></div>
+  <div class="metric-grid">
+    <div class="metric-card"><div class="metric-label">股票代號</div><div class="metric-value">2395</div></div>
+    <div class="metric-card"><div class="metric-label">公司名稱</div><div class="metric-value" style="font-size:16px">研華科技</div></div>
+    <div class="metric-card"><div class="metric-label">產業別</div><div class="metric-value" style="font-size:14px">工業電腦</div><div class="metric-sub">電腦及週邊設備業</div></div>
+    <div class="metric-card"><div class="metric-label">目前股價</div><div class="metric-value">473 元</div><div class="metric-sub">2026/06/11</div></div>
+  </div>
+  <table>
+    <tr><th>項目</th><th>內容</th></tr>
+    <tr><td>主要業務</td><td>工業電腦（IPC）、嵌入式平台、AIoT解決方案、邊緣運算硬體</td></tr>
+    <tr><td>全球定位</td><td>全球工業電腦市占率第一，產品覆蓋製造、醫療、交通、能源等垂直市場</td></tr>
+    <tr><td>上市市場</td><td>台灣證券交易所（TWSE）</td></tr>
+    <tr><td>股價區間（近52週）</td><td>約 330 ~ 510 元</td></tr>
+    <tr><td>本益比（P/E）</td><td>約 38.4 倍（歷史高估值，反映成長溢價）</td></tr>
+    <tr><td>市值</td><td>約 3,600–3,800 億元</td></tr>
+  </table>
+</div>
+
+<!-- STEP 3 -->
+<div class="section">
+  <div class="step-header"><span class="step-num">STEP 3</span><span class="section-title">財務基本面分析</span></div>
+
+  <div class="two-col">
+    <div>
+      <p style="font-size:13px;font-weight:600;color:#1a3a6b;margin-bottom:8px">📊 近5年 EPS 趨勢（元）</p>
+      <div class="eps-bar-wrap">
+        <div class="eps-row"><span class="eps-label">2021</span><div class="eps-bar" style="width:75%;background:#2d6abf">12.6</div></div>
+        <div class="eps-row"><span class="eps-label">2022</span><div class="eps-bar" style="width:80%;background:#2d6abf">13.5</div></div>
+        <div class="eps-row"><span class="eps-label">2023</span><div class="eps-bar" style="width:75%;background:#2d6abf">12.65</div></div>
+        <div class="eps-row"><span class="eps-label">2024</span><div class="eps-bar" style="width:62%;background:#e67e22">10.46 ⚠️</div></div>
+        <div class="eps-row"><span class="eps-label">2025</span><div class="eps-bar" style="width:73%;background:#27ae60">12.25 ↑</div></div>
+        <div class="eps-row"><span class="eps-label" style="color:#7c3aed;font-weight:700">2026Q1</span><div class="eps-bar" style="width:23%;background:#7c3aed">3.85</div></div>
+      </div>
+      <p style="font-size:11px;color:#aaa;margin-top:6px">2026 Q1 年增 +21%，近四季 EPS 約 13.0元</p>
+    </div>
+    <div>
+      <p style="font-size:13px;font-weight:600;color:#1a3a6b;margin-bottom:8px">📋 關鍵財務指標</p>
+      <table>
+        <tr><th>指標</th><th>數值</th><th>評估</th></tr>
+        <tr><td>ROE（近年均）</td><td>~18–22%</td><td><span class="badge badge-green">優良 ✅</span></td></tr>
+        <tr><td>負債比率</td><td>~35–40%</td><td><span class="badge badge-green">安全 ✅</span></td></tr>
+        <tr><td>稅後淨利率</td><td>~13–14%</td><td><span class="badge badge-green">優秀 ✅</span></td></tr>
+        <tr><td>連續配息</td><td>29年</td><td><span class="badge badge-green">穩健 ✅</span></td></tr>
+        <tr><td>EPS 2024</td><td>10.46元</td><td><span class="badge badge-yellow">曾衰退 ⚠️</span></td></tr>
+        <tr><td>EPS 2025</td><td>12.25元</td><td><span class="badge badge-green">已回升 ✅</span></td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div style="margin-top:16px">
+    <p style="font-size:13px;font-weight:600;color:#1a3a6b;margin-bottom:8px">💰 歷年現金股利</p>
+    <table>
+      <tr><th>配息年度</th><th>對應盈餘年度</th><th>EPS</th><th>現金股利</th><th>盈餘分配率</th></tr>
+      <tr><td>2024年</td><td>2023年</td><td>12.65 元</td><td>9.5 元</td><td>75.1%</td></tr>
+      <tr class="highlight"><td>2025年</td><td>2024年</td><td>10.46 元</td><td>8.4 元</td><td>80.3%</td></tr>
+      <tr><td>2026年（預估）</td><td>2025年</td><td>12.25 元</td><td>~10.0 元</td><td>~78%</td></tr>
+    </table>
+    <p style="font-size:11px;color:#888;margin-top:6px">歷年平均盈餘分配率約 77.5%；殖利率以473元計算，2026年預估約 2.1%</p>
+  </div>
+
+  <div class="flag-box" style="margin-top:16px">
+    <b>⚠️ 財務紅旗確認：</b><br>
+    2024年EPS（10.46元）較2023年（12.65元）衰退 -17.3%。惟衰退原因為全球工業自動化庫存調整（一次性），非結構性惡化；2025年已完整回升至12.25元，2026年Q1 EPS達3.85元（年增+21%），顯示復甦態勢穩固。<br><br>
+    <b>判斷：屬短期庫存週期衰退，非連續惡化 → 繼續分析 ✅</b>
+  </div>
+</div>
+
+<!-- STEP 4 -->
+<div class="section">
+  <div class="step-header"><span class="step-num">STEP 4</span><span class="section-title">產業與護城河分析</span></div>
+  <div class="two-col">
+    <div>
+      <table>
+        <tr><th>面向</th><th>評估</th></tr>
+        <tr><td>產業景氣位置</td><td><span class="badge badge-green">上行期（工業4.0 / Edge AI）</span></td></tr>
+        <tr><td>競爭護城河</td><td><span class="badge badge-green">強（全球IPC市占率第一）</span></td></tr>
+        <tr><td>市占率趨勢</td><td><span class="badge badge-green">持續增加</span></td></tr>
+        <tr><td>政策/地緣風險</td><td><span class="badge badge-yellow">中等（中國業務約20%）</span></td></tr>
+        <tr><td>2026年 B/B 值</td><td><span class="badge badge-blue">1.8倍（接單遠大於出貨）</span></td></tr>
+      </table>
+    </div>
+    <div>
+      <div class="info-box">
+        <b>🔬 產業深度觀察</b><br><br>
+        研華是全球工業電腦龍頭，在邊緣運算（Edge Computing）與 AIoT 浪潮中扮演關鍵角色。客戶涵蓋製造業、智慧城市、醫療、交通基礎設施等高壁壘市場。2026年首季法說指出 B/B 值達 1.8，代表每出貨 1元即有 1.8元新訂單入帳，為強勁訂單能見度指標。
+      </div>
+    </div>
+  </div>
+  <div class="pass-box" style="margin-top:12px">✅ 產業紅旗確認通過：產業處於上行週期，護城河強，市占率持續擴大</div>
+</div>
+
+<!-- STEP 5 -->
+<div class="section">
+  <div class="step-header"><span class="step-num">STEP 5</span><span class="section-title" style="color:#a06010">投資可行性綜合判斷</span></div>
+  <div class="pass-box">✅ STEP 5 通過：財務體質優良、產業趨勢明確、EPS已回升 → 進入預估模組</div>
+</div>
+
+<!-- REVENUE MODULE -->
+<div class="section">
+  <div class="step-header"><span class="step-num green">①②③</span><span class="section-title">營收預估模組</span></div>
+
+  <div style="margin-bottom:16px">
+    <p style="font-size:13px;font-weight:600;margin-bottom:10px;color:#1a3a6b">📈 近24個月月營收趨勢（億元）</p>
+    <table>
+      <tr><th>月份</th><th>月營收（億元）</th><th>年增率</th></tr>
+      <tr><td>2025/03</td><td>63.23</td><td class="positive">+25.61%</td></tr>
+      <tr><td>2025/04</td><td>61.43</td><td class="positive">+28.97%</td></tr>
+      <tr><td>2025/10</td><td>60.16</td><td class="positive">+8.70%</td></tr>
+      <tr><td>2026/01</td><td>70.59</td><td class="positive">+23.14%</td></tr>
+      <tr><td>2026/02</td><td>56.27</td><td class="positive">+6.30%</td></tr>
+      <tr class="highlight"><td>2026/04</td><td>82.69 🆕</td><td class="positive">+34.61%（月新高）</td></tr>
+    </table>
+  </div>
+
+  <div class="orange-box">
+    <table>
+      <tr><th>步驟</th><th>項目</th><th>數值</th></tr>
+      <tr><td>①</td><td>上年度（2025）全年營收 A</td><td><b>708.82 億元</b>（歷史新高）</td></tr>
+      <tr><td>②</td><td>2026年1–4月累計年增率 B</td><td><b>+22.3%</b>（1月+23.1%、2月+6.3%、4月+34.6%加權）</td></tr>
+      <tr class="highlight"><td>③</td><td>今年預估全年營收 C = A × (1+B)</td><td style="font-size:17px;color:#e67e22"><b>708.82 × 1.223 ≈ 867 億元</b></td></tr>
+    </table>
+  </div>
+  <div class="pass-box">✅ 營收確認通過：2026年累計年增率 +22.3%，正成長且動能加速（4月月增+34.6%）</div>
+</div>
+
+<!-- EPS MODULE -->
+<div class="section">
+  <div class="step-header"><span class="step-num orange">④–⑧</span><span class="section-title">EPS / 股利預估模組</span></div>
+
+  <div class="two-col" style="margin-bottom:16px">
+    <div>
+      <table>
+        <tr><th>參數</th><th>數值</th><th>備註</th></tr>
+        <tr><td>④ 稅後淨利率假設</td><td>保守12.5% / 合理14.0% / 樂觀15.0%</td><td>歷年約13–14%</td></tr>
+        <tr><td>⑤ 今年預估營收（C）</td><td>867 億元</td><td>①×(1+②)</td></tr>
+        <tr><td>⑥ 發行股數</td><td>約 8.1 億股</td><td>依2025 EPS及淨利率推算</td></tr>
+        <tr><td>⑦ 盈餘分配率</td><td>77.5%</td><td>近2年均值（75%+80%）</td></tr>
+      </table>
+    </div>
+    <div>
+      <div class="info-box">
+        <b>稅後淨利率依據</b><br>
+        2025年全年 EPS 12.25元 × 8.1億股 = 淨利約99.2億<br>
+        ÷ 2025年營收 708.82億 = <b>稅後淨利率 14.0%</b><br><br>
+        研華長期維持 13-15% 淨利率，為工業電腦產業高利潤率代表。
+      </div>
+    </div>
+  </div>
+
+  <div class="scenario-grid">
+    <div class="scenario-card sc-conservative">
+      <div class="sc-title">保守情境</div>
+      <div style="font-size:11px;color:#888">淨利率 12.5%</div>
+      <div class="sc-eps" style="color:#555">13.4 元</div>
+      <div class="sc-div" style="color:#555">⑧ 股利 10.4 元</div>
+      <div class="sc-yield">殖利率 2.2%（@473元）</div>
+    </div>
+    <div class="scenario-card sc-base">
+      <div class="sc-title">合理情境 ★</div>
+      <div style="font-size:11px;color:#e67e22">淨利率 14.0%</div>
+      <div class="sc-eps" style="color:#e67e22">15.0 元</div>
+      <div class="sc-div" style="color:#e67e22">⑧ 股利 11.6 元</div>
+      <div class="sc-yield">殖利率 2.5%（@473元）</div>
+    </div>
+    <div class="scenario-card sc-optimistic">
+      <div class="sc-title">樂觀情境</div>
+      <div style="font-size:11px;color:#27ae60">淨利率 15.0%</div>
+      <div class="sc-eps" style="color:#27ae60">16.1 元</div>
+      <div class="sc-div" style="color:#27ae60">⑧ 股利 12.5 元</div>
+      <div class="sc-yield">殖利率 2.6%（@473元）</div>
+    </div>
+  </div>
+
+  <div class="pass-box" style="margin-top:12px">
+    ✅ 獲利確認通過：合理情境EPS（15.0元）> 2025年實際EPS（12.25元），成長 +22.4%；<br>
+    稅後淨利率 14% > 1.5% 門檻；預估股利 11.6元 > 2025年發放 8.4元
+  </div>
+</div>
+
+<!-- STEP 6 CHIPS -->
+<div class="section">
+  <div class="step-header"><span class="step-num purple">STEP 6</span><span class="section-title">千張大戶籌碼驗證</span></div>
+  <div class="purple-box">
+    <p style="font-size:13px;font-weight:600;color:#4c1d95;margin-bottom:12px">集保戶股權分散表（資料截至2026/02）</p>
+    <div class="chip-row">
+      <span class="chip-label">🐋 千張以上大戶持股比例</span>
+      <span>
+        <span class="chip-val positive">77.66%</span>
+        <span class="chip-change positive">（高水準，籌碼集中）</span>
+      </span>
+    </div>
+    <div class="chip-row">
+      <span class="chip-label">🌍 外資持股比例</span>
+      <span>
+        <span class="chip-val positive">31.25%</span>
+        <span class="chip-change positive">（外資穩定持有）</span>
+      </span>
+    </div>
+    <div class="chip-row">
+      <span class="chip-label">📊 2026年4月單月營收</span>
+      <span>
+        <span class="chip-val positive">82.69億元</span>
+        <span class="chip-change positive">月新高，年增+34.6%</span>
+      </span>
+    </div>
+    <div style="margin-top:14px;padding-top:10px;border-top:1px solid #ddd;font-size:12.5px;color:#4c1d95">
+      <b>籌碼信號：</b>大戶持股 77.66% 處歷史相對高位，外資穩定持有。結合 2026年4月 B/B 值達 1.8，機構法人對研華後市保持信心。
+    </div>
+  </div>
+  <div class="pass-box">✅ 籌碼確認通過：大戶籌碼集中，外資穩定，無撤出跡象</div>
+</div>
+
+<!-- STEP 7 -->
+<div class="section">
+  <div class="step-header"><span class="step-num">STEP 7</span><span class="section-title">投資策略建議</span></div>
+  <div class="two-col">
+    <div style="background:#e8f0ff;border:1.5px solid #2d6abf;border-radius:8px;padding:16px">
+      <p style="font-weight:700;color:#1a3a6b;margin-bottom:8px">📅 長期投資（主策略）</p>
+      <p style="font-size:13px;color:#555;line-height:1.7">
+        研華護城河強、連續配息29年，適合長期持有。<br>
+        建議以「分批佈局、逢低加碼」策略，持有目標 2–3年以上。<br><br>
+        <b>進場時機參考：</b>當股價回測至 P/E 30–33倍區間（約 370–400元）附近，可視為相對合理進場區。<br><br>
+        <b>目標股價：</b>若2026年EPS 15元、P/E 35倍 = 525元；P/E 38倍 = 570元
+      </p>
+    </div>
+    <div>
+      <p style="font-size:13px;font-weight:600;color:#1a3a6b;margin-bottom:10px">⚠️ 主要風險提示</p>
+      <div class="risk-item"><span class="risk-icon">🌏</span><span><b>地緣政治風險：</b>中國業務佔比約20%，若兩岸局勢惡化或美中貿易戰升溫，可能影響部分業務</span></div>
+      <div class="risk-item"><span class="risk-icon">💰</span><span><b>估值偏高：</b>P/E 38倍屬歷史高位，若成長不如預期，估值回歸壓力較大</span></div>
+      <div class="risk-item"><span class="risk-icon">📦</span><span><b>庫存週期：</b>2024年曾因庫存調整致EPS衰退，需持續觀察庫存去化情況</span></div>
+      <div class="risk-item"><span class="risk-icon">🤖</span><span><b>AI競爭：</b>AI邊緣運算市場競爭加劇，需關注英特爾、NVIDIA等大廠動向</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- STEP 8 -->
+<div class="section">
+  <div class="step-header"><span class="step-num">STEP 8</span><span class="section-title">資金配置（100萬台幣）</span></div>
+  <div class="metric-grid">
+    <div class="metric-card"><div class="metric-label">總預算</div><div class="metric-value" style="font-size:16px">100 萬元</div></div>
+    <div class="metric-card"><div class="metric-label">單檔上限（20%）</div><div class="metric-value" style="font-size:16px">20 萬元</div></div>
+    <div class="metric-card"><div class="metric-label">分3批進場</div><div class="metric-value" style="font-size:16px">6~7 萬/批</div></div>
+    <div class="metric-card"><div class="metric-label">停損設定</div><div class="metric-value negative" style="font-size:16px">-10%</div></div>
+  </div>
+  <table style="margin-top:12px">
+    <tr><th>批次</th><th>進場條件</th><th>金額</th><th>約可買張數</th></tr>
+    <tr><td>第1批</td><td>確認趨勢、初始佈局</td><td>6萬元</td><td>約 1 張（@473元/張）</td></tr>
+    <tr><td>第2批</td><td>K線突破季線、或回測支撐後反彈</td><td>7萬元</td><td>約 1 張</td></tr>
+    <tr><td>第3批</td><td>營收/法說持續利多確認</td><td>7萬元</td><td>約 1 張</td></tr>
+    <tr class="highlight"><td>合計</td><td>最大配置</td><td>20萬元</td><td>約 3 張</td></tr>
+  </table>
+  <div class="info-box" style="margin-top:12px">
+    💡 研華股價 473元（1張 = 47,300元），20萬元約可買入 4 張。建議分批佈局以降低時間成本風險。其餘 80萬元分散於其他4–5支股票或台灣50 ETF。
+  </div>
+</div>
+
+<!-- STEP 9 SUMMARY -->
+<div class="section">
+  <div class="step-header"><span class="step-num green">STEP 9</span><span class="section-title">完整分析總結</span></div>
+  <table>
+    <tr><th>分析節點</th><th>判斷結果</th><th>關鍵依據</th></tr>
+    <tr><td>STEP 3 財務紅旗</td><td><span class="badge badge-yellow">輕微警示</span></td><td>2024年EPS曾衰退，但2025年已回升，非連續惡化</td></tr>
+    <tr><td>STEP 4 產業紅旗</td><td><span class="badge badge-green">通過 ✅</span></td><td>工業電腦上行週期，護城河強，B/B值1.8</td></tr>
+    <tr><td>STEP 5 可行性判斷</td><td><span class="badge badge-green">通過 ✅</span></td><td>財務健全，前景明確</td></tr>
+    <tr><td>③ 營收衰退確認</td><td><span class="badge badge-green">通過 ✅</span></td><td>2026年1-4月累計年增+22.3%，動能加速</td></tr>
+    <tr><td>⑧ 獲利衰退確認</td><td><span class="badge badge-green">通過 ✅</span></td><td>預估EPS 15.0元 > 2025年 12.25元</td></tr>
+    <tr><td>STEP 6 籌碼確認</td><td><span class="badge badge-green">通過 ✅</span></td><td>大戶77.66%，外資31.25%，無出走跡象</td></tr>
+    <tr class="highlight"><td>最終建議</td><td><span class="badge badge-green">✅ 建議長期投資</span></td><td>分批佈局，目標持有2年以上</td></tr>
+  </table>
+
+  <div class="two-col" style="margin-top:16px">
+    <div style="background:#f0fff4;border:1.5px solid #27ae60;border-radius:8px;padding:14px">
+      <p style="font-weight:700;color:#1b5e20;margin-bottom:8px">📈 投資亮點</p>
+      <p style="font-size:13px;color:#2e7d32;line-height:1.8">
+        ✓ 全球工業電腦龍頭，護城河極強<br>
+        ✓ 連續29年配息，股東回報穩定<br>
+        ✓ AIoT / Edge AI 長期成長趨勢明確<br>
+        ✓ 2026年B/B值1.8，訂單能見度高<br>
+        ✓ 2025全年營收創歷史新高（708.82億）<br>
+        ✓ 2026 Q1 EPS 3.85元（年增+21%）
+      </p>
+    </div>
+    <div style="background:#fff5f5;border:1.5px solid #e57373;border-radius:8px;padding:14px">
+      <p style="font-weight:700;color:#c62828;margin-bottom:8px">⚠️ 投資注意事項</p>
+      <p style="font-size:13px;color:#b71c1c;line-height:1.8">
+        ✗ P/E 38倍估值偏高，安全邊際較低<br>
+        ✗ 殖利率僅 2.5%，非高息標的<br>
+        ✗ 中國業務約20%，地緣風險存在<br>
+        ✗ 2024年曾EPS衰退（庫存調整）<br>
+        ✗ 股價高（473元/張≈47,300元），<br>　 小資金需謹慎配置
+      </p>
+    </div>
+  </div>
+</div>
+
+<footer>
+  ⚠️ 本報告依「台灣股票投資分析工具 v1.0」九步驟流程自動生成，僅供參考，不構成任何投資建議。<br>
+  資料來源：財報狗、Goodinfo、鉅亨網、HiStock、Win投資（截至2026/06/17）<br>
+  投資有風險，請依個人財務狀況與風險承受度謹慎評估，必要時諮詢專業理財顧問。
+</footer>
+
+</body>
+</html>
