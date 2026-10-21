@@ -14,6 +14,7 @@ import plotly.express as px
 from datetime import datetime, timedelta
 import base64
 import math
+import json
 
 # ══════════════════════════════════════════════════════════════════
 #  PAGE CONFIG
@@ -104,7 +105,7 @@ def fetch_monthly_revenue(stock_id: str, start: str = "2023-01-01") -> pd.DataFr
     try:
         r = requests.get(
             f"{FINMIND_BASE}?dataset=TaiwanStockMonthRevenue"
-            f"&stock_id={stock_id}&start_date={start}",
+            f"&data_id={stock_id}&start_date={start}",
             timeout=20,
         )
         d = r.json()
@@ -123,7 +124,7 @@ def fetch_financial_statements(stock_id: str, start: str = "2020-01-01") -> pd.D
     try:
         r = requests.get(
             f"{FINMIND_BASE}?dataset=TaiwanStockFinancialStatements"
-            f"&stock_id={stock_id}&start_date={start}",
+            f"&data_id={stock_id}&start_date={start}",
             timeout=25,
         )
         d = r.json()
@@ -141,7 +142,7 @@ def fetch_balance_sheet(stock_id: str, start: str = "2020-01-01") -> pd.DataFram
     try:
         r = requests.get(
             f"{FINMIND_BASE}?dataset=TaiwanStockBalanceSheet"
-            f"&stock_id={stock_id}&start_date={start}",
+            f"&data_id={stock_id}&start_date={start}",
             timeout=25,
         )
         d = r.json()
@@ -161,7 +162,7 @@ def fetch_latest_price(stock_id: str) -> float | None:
         end = datetime.now().strftime("%Y-%m-%d")
         r = requests.get(
             f"{FINMIND_BASE}?dataset=TaiwanStockPrice"
-            f"&stock_id={stock_id}&start_date={start}&end_date={end}",
+            f"&data_id={stock_id}&start_date={start}&end_date={end}",
             timeout=15,
         )
         d = r.json()
@@ -178,7 +179,7 @@ def fetch_dividend(stock_id: str, start: str = "2019-01-01") -> pd.DataFrame:
     try:
         r = requests.get(
             f"{FINMIND_BASE}?dataset=TaiwanStockDividend"
-            f"&stock_id={stock_id}&start_date={start}",
+            f"&data_id={stock_id}&start_date={start}",
             timeout=20,
         )
         d = r.json()
@@ -196,13 +197,103 @@ def fetch_chip_data(stock_id: str) -> pd.DataFrame:
         start = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
         r = requests.get(
             f"{FINMIND_BASE}?dataset=TaiwanStockHoldingSharesPer"
-            f"&stock_id={stock_id}&start_date={start}",
+            f"&data_id={stock_id}&start_date={start}",
             timeout=20,
         )
         d = r.json()
         if d.get("status") == 200 and d["data"]:
             df = pd.DataFrame(d["data"])
             df["date"] = pd.to_datetime(df["date"])
+            return df.sort_values("date").reset_index(drop=True)
+    except Exception:
+        pass
+    return pd.DataFrame()
+
+
+@st.cache_data(ttl=1_800, show_spinner=False)
+def fetch_price_history(stock_id: str, days: int = 40) -> pd.DataFrame:
+    """日K OHLCV，含成交量（Trading_Volume），來源：台灣證交所公開交易資訊（經 FinMind 彙整）"""
+    try:
+        start = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        r = requests.get(
+            f"{FINMIND_BASE}?dataset=TaiwanStockPrice"
+            f"&data_id={stock_id}&start_date={start}",
+            timeout=20,
+        )
+        d = r.json()
+        if d.get("status") == 200 and d["data"]:
+            df = pd.DataFrame(d["data"])
+            df["date"] = pd.to_datetime(df["date"])
+            for c in ["close", "open", "max", "min", "Trading_Volume"]:
+                if c in df.columns:
+                    df[c] = pd.to_numeric(df[c], errors="coerce")
+            return df.sort_values("date").reset_index(drop=True)
+    except Exception:
+        pass
+    return pd.DataFrame()
+
+
+@st.cache_data(ttl=3_600, show_spinner=False)
+def fetch_margin_data(stock_id: str, days: int = 40) -> pd.DataFrame:
+    """融資融券餘額，來源：台灣證交所／櫃買中心公開交易資訊（經 FinMind 彙整）"""
+    try:
+        start = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        r = requests.get(
+            f"{FINMIND_BASE}?dataset=TaiwanStockMarginPurchaseShortSale"
+            f"&data_id={stock_id}&start_date={start}",
+            timeout=20,
+        )
+        d = r.json()
+        if d.get("status") == 200 and d["data"]:
+            df = pd.DataFrame(d["data"])
+            df["date"] = pd.to_datetime(df["date"])
+            for c in df.columns:
+                if c not in ("date", "stock_id"):
+                    df[c] = pd.to_numeric(df[c], errors="coerce")
+            return df.sort_values("date").reset_index(drop=True)
+    except Exception:
+        pass
+    return pd.DataFrame()
+
+
+@st.cache_data(ttl=3_600, show_spinner=False)
+def fetch_institutional_data(stock_id: str, days: int = 40) -> pd.DataFrame:
+    """三大法人（外資／投信／自營商）買賣超，來源：台灣證交所公開交易資訊（經 FinMind 彙整）"""
+    try:
+        start = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        r = requests.get(
+            f"{FINMIND_BASE}?dataset=TaiwanStockInstitutionalInvestorsBuySell"
+            f"&data_id={stock_id}&start_date={start}",
+            timeout=20,
+        )
+        d = r.json()
+        if d.get("status") == 200 and d["data"]:
+            df = pd.DataFrame(d["data"])
+            df["date"] = pd.to_datetime(df["date"])
+            df["buy"] = pd.to_numeric(df["buy"], errors="coerce")
+            df["sell"] = pd.to_numeric(df["sell"], errors="coerce")
+            df["net"] = df["buy"] - df["sell"]
+            return df.sort_values("date").reset_index(drop=True)
+    except Exception:
+        pass
+    return pd.DataFrame()
+
+
+@st.cache_data(ttl=3_600, show_spinner=False)
+def fetch_day_trading(stock_id: str, days: int = 40) -> pd.DataFrame:
+    """信用當沖成交量，來源：台灣證交所公開交易資訊（經 FinMind 彙整）"""
+    try:
+        start = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        r = requests.get(
+            f"{FINMIND_BASE}?dataset=TaiwanStockDayTrading"
+            f"&data_id={stock_id}&start_date={start}",
+            timeout=20,
+        )
+        d = r.json()
+        if d.get("status") == 200 and d["data"]:
+            df = pd.DataFrame(d["data"])
+            df["date"] = pd.to_datetime(df["date"])
+            df["Volume"] = pd.to_numeric(df["Volume"], errors="coerce")
             return df.sort_values("date").reset_index(drop=True)
     except Exception:
         pass
@@ -261,6 +352,354 @@ def red_flag_check(items: list[str], title: str) -> bool:
         key=f"rf_{title[:6]}",
     )
     return "不建議" not in choice
+
+
+def grade_score(s: float):
+    """共用評級對照：A+/A/B+/B/C/D"""
+    if s >= 85: return "A+", "#27ae60"
+    if s >= 70: return "A",  "#2d9e60"
+    if s >= 55: return "B+", "#e67e22"
+    if s >= 40: return "B",  "#c47800"
+    if s >= 25: return "C",  "#e05252"
+    return "D", "#c02020"
+
+
+# ── 籌碼／技術訊號：資料整理 ─────────────────────────────────────────
+
+def calc_institutional_signal(inst_df: pd.DataFrame) -> dict | None:
+    """三大法人合計買賣超（近5/10日）＋ 投信買賣超趨勢（連續天數）"""
+    if inst_df.empty or "net" not in inst_df.columns:
+        return None
+    daily_net = inst_df.groupby("date")["net"].sum().sort_index()
+    if daily_net.empty:
+        return None
+
+    trust_df = inst_df[inst_df["name"].astype(str).str.contains("Investment_Trust", na=False)]
+    trust_net = trust_df.groupby("date")["net"].sum().sort_index()
+
+    net5 = float(daily_net.tail(5).sum())
+    net10 = float(daily_net.tail(10).sum())
+    t_net5 = float(trust_net.tail(5).sum()) if not trust_net.empty else 0.0
+
+    t_series = trust_net.tail(10).tolist()
+    buy_streak = 0
+    for v in reversed(t_series):
+        if v > 0: buy_streak += 1
+        else: break
+    sell_streak = 0
+    for v in reversed(t_series):
+        if v < 0: sell_streak += 1
+        else: break
+    last5 = trust_net.tail(5).tolist()
+    buy_days5 = sum(1 for v in last5 if v > 0)
+    sell_days5 = sum(1 for v in last5 if v < 0)
+
+    return {
+        "inst_net5": net5, "inst_net10": net10, "trust_net5": t_net5,
+        "trust_buy_streak": buy_streak, "trust_sell_streak": sell_streak,
+        "trust_buy_days5": buy_days5, "trust_sell_days5": sell_days5,
+    }
+
+
+def calc_margin_signal(margin_df: pd.DataFrame, price_df: pd.DataFrame) -> dict | None:
+    """融資餘額5日變化率 vs 股價5日變化率，判斷籌碼安定度"""
+    if margin_df.empty or "MarginPurchaseTodayBalance" not in margin_df.columns:
+        return None
+    m = margin_df.sort_values("date").dropna(subset=["MarginPurchaseTodayBalance"])
+    if len(m) < 2:
+        return None
+    bal_now = float(m.iloc[-1]["MarginPurchaseTodayBalance"])
+    bal_ref = float(m.iloc[max(0, len(m) - 6)]["MarginPurchaseTodayBalance"])
+    margin_chg_pct = (bal_now - bal_ref) / bal_ref * 100 if bal_ref else 0.0
+
+    price_chg_pct = None
+    if not price_df.empty and len(price_df) >= 2 and "close" in price_df.columns:
+        p = price_df.sort_values("date").dropna(subset=["close"])
+        if len(p) >= 2:
+            p_now = float(p.iloc[-1]["close"])
+            p_ref = float(p.iloc[max(0, len(p) - 6)]["close"])
+            price_chg_pct = (p_now - p_ref) / p_ref * 100 if p_ref else None
+
+    return {"margin_chg_pct": margin_chg_pct, "price_chg_pct": price_chg_pct,
+            "margin_balance": bal_now}
+
+
+def calc_day_trading_signal(dt_df: pd.DataFrame, price_df: pd.DataFrame) -> dict | None:
+    """近5日：信用當沖成交量 ÷ 當日總成交量，取平均比例"""
+    if dt_df.empty or price_df.empty or "Trading_Volume" not in price_df.columns:
+        return None
+    pv = price_df.dropna(subset=["Trading_Volume"]).set_index("date")["Trading_Volume"]
+    ratios = []
+    for _, row in dt_df.sort_values("date").tail(5).iterrows():
+        d = row["date"]
+        if d in pv.index and pv[d] and pv[d] > 0 and pd.notna(row["Volume"]):
+            ratios.append(row["Volume"] / pv[d] * 100)
+    if not ratios:
+        return None
+    return {"day_trading_ratio_avg": sum(ratios) / len(ratios), "sample_days": len(ratios)}
+
+
+def calc_chip_tech_score(inst_sig: dict | None, margin_sig: dict | None,
+                          dt_sig: dict | None) -> tuple[int, list]:
+    """
+    籌碼面技術評分（100分，四構面各25分）：三大法人買賣超／投信買賣超／融資餘額變化／信用當沖比例
+    評分規則為固定門檻的規則式評分（非AI主觀判斷），門檻依據台股籌碼分析常見經驗法則設定，
+    僅供參考，非保證有效的投資訊號。
+    """
+    items = []
+    score = 0
+
+    if inst_sig:
+        n5, n10 = inst_sig["inst_net5"], inst_sig["inst_net10"]
+        if n5 > 0 and n10 > 0:
+            score += 25; items.append(("✅", f"三大法人近5日＋10日均為買超（5日淨買 {n5:,.0f} 張）", 25))
+        elif n5 > 0:
+            score += 18; items.append(("✅", f"三大法人近5日買超（{n5:,.0f} 張），10日尚未轉正", 18))
+        elif abs(n5) < 1:
+            score += 10; items.append(("➡️", "三大法人買賣力道接近持平", 10))
+        elif n5 < 0 and n10 > 0:
+            score += 5; items.append(("⚠️", "三大法人近5日轉賣，10日仍為買超，動能可能減弱", 5))
+        else:
+            score += 0; items.append(("🔴", f"三大法人近5日＋10日均為賣超（5日淨賣 {abs(n5):,.0f} 張）", 0))
+    else:
+        items.append(("❔", "三大法人資料不足，無法評分", 0))
+
+    if inst_sig:
+        bs, ss = inst_sig["trust_buy_streak"], inst_sig["trust_sell_streak"]
+        bd5, sd5 = inst_sig["trust_buy_days5"], inst_sig["trust_sell_days5"]
+        if bs >= 5:
+            score += 25; items.append(("✅", f"投信連續 {bs} 日買超，籌碼集中度高", 25))
+        elif bd5 >= 3:
+            score += 18; items.append(("✅", f"投信近5日有 {bd5} 天買超", 18))
+        elif sd5 >= 3:
+            score += 5; items.append(("⚠️", f"投信近5日有 {sd5} 天賣超", 5))
+        elif ss >= 5:
+            score += 0; items.append(("🔴", f"投信連續 {ss} 日賣超，籌碼流失", 0))
+        else:
+            score += 10; items.append(("➡️", "投信買賣互見，無明顯方向", 10))
+    else:
+        items.append(("❔", "投信資料不足，無法評分", 0))
+
+    if margin_sig and margin_sig.get("price_chg_pct") is not None:
+        mc, pc = margin_sig["margin_chg_pct"], margin_sig["price_chg_pct"]
+        if mc < 0 and pc > 0:
+            score += 25; items.append(("✅", f"融資減少 {mc:.1f}% 同時股價上漲 {pc:.1f}%，籌碼安定型上漲", 25))
+        elif abs(mc) < 2 and pc > 0:
+            score += 18; items.append(("✅", f"融資變化不大（{mc:+.1f}%），股價上漲 {pc:.1f}%", 18))
+        elif mc > 0 and pc > mc:
+            score += 10; items.append(("➡️", f"融資增加 {mc:.1f}%，但漲幅 {pc:.1f}% 仍大於融資增幅", 10))
+        elif mc > 5 and pc <= mc:
+            score += 0; items.append(("🔴", f"融資大增 {mc:.1f}% 但漲幅僅 {pc:.1f}%，散戶追價風險偏高", 0))
+        else:
+            score += 5; items.append(("⚠️", f"融資變化 {mc:+.1f}%、股價變化 {pc:+.1f}%，訊號不明確", 5))
+    else:
+        items.append(("❔", "融資資料不足，無法評分", 0))
+
+    if dt_sig:
+        r = dt_sig["day_trading_ratio_avg"]
+        if r < 15:
+            score += 25; items.append(("✅", f"近5日當沖比例平均 {r:.1f}%，籌碼相對穩定", 25))
+        elif r < 25:
+            score += 18; items.append(("➡️", f"當沖比例 {r:.1f}%，屬正常範圍", 18))
+        elif r < 40:
+            score += 10; items.append(("⚠️", f"當沖比例 {r:.1f}%，投機味漸濃，留意隔日沖賣壓", 10))
+        else:
+            score += 0; items.append(("🔴", f"當沖比例高達 {r:.1f}%，短線投機盛行，波動風險大", 0))
+    else:
+        items.append(("❔", "當沖資料不足，無法評分", 0))
+
+    return score, items
+
+
+# ── 波浪理論輔助判讀（ZigZag 轉折點，規則式、可重現）──────────────────
+
+def zigzag_pivots(price_df: pd.DataFrame, pct_threshold: float = 5.0) -> pd.DataFrame:
+    """
+    簡化版 ZigZag 演算法：股價自前一轉折點反向變動達 pct_threshold% 才標記新轉折點。
+    這是固定規則、可重現的演算法，用來客觀標記出「相對高點／低點」，作為波浪計數的依據，
+    避免用肉眼主觀畫線。
+    """
+    if price_df.empty or len(price_df) < 5 or "close" not in price_df.columns:
+        return pd.DataFrame()
+    df = price_df.sort_values("date").dropna(subset=["close"]).reset_index(drop=True)
+    if len(df) < 5:
+        return pd.DataFrame()
+
+    pivots = []
+    last_idx, last_price = 0, float(df.loc[0, "close"])
+    direction = None
+
+    for i in range(1, len(df)):
+        price = float(df.loc[i, "close"])
+        chg_pct = (price - last_price) / last_price * 100 if last_price else 0
+
+        if direction is None:
+            if abs(chg_pct) >= pct_threshold:
+                pivots.append((last_idx, last_price, "起"))
+                direction = "up" if chg_pct > 0 else "down"
+                last_idx, last_price = i, price
+        elif direction == "up":
+            if price >= last_price:
+                last_idx, last_price = i, price
+            elif last_price and (last_price - price) / last_price * 100 >= pct_threshold:
+                pivots.append((last_idx, last_price, "高點"))
+                direction, last_idx, last_price = "down", i, price
+        else:  # down
+            if price <= last_price:
+                last_idx, last_price = i, price
+            elif last_price and (price - last_price) / last_price * 100 >= pct_threshold:
+                pivots.append((last_idx, last_price, "低點"))
+                direction, last_idx, last_price = "up", i, price
+
+    pivots.append((last_idx, last_price,
+                    "高點" if direction == "up" else "低點" if direction == "down" else "目前"))
+
+    return pd.DataFrame([
+        {"date": df.loc[idx, "date"], "price": price, "type": kind}
+        for idx, price, kind in pivots
+    ])
+
+
+def simple_wave_count(pivot_df: pd.DataFrame) -> dict:
+    """
+    以 ZigZag 轉折點做簡化波浪標記（輔助判讀，非嚴謹艾略特波浪理論定論——
+    正式波浪計數需搭配型態、成交量、費波那契比率等多重確認，仍具主觀判斷成分）。
+    """
+    if pivot_df.empty or len(pivot_df) < 2:
+        return {"available": False}
+
+    recent = pivot_df.tail(6).reset_index(drop=True)
+    n = len(recent)
+    wave_names = ["起", "1", "2", "3", "4", "5"]
+    recent["wave_label"] = [wave_names[i] if i < len(wave_names) else str(i) for i in range(n)]
+
+    last_leg_pct = None
+    if n >= 2:
+        p0, p1 = float(recent.iloc[-2]["price"]), float(recent.iloc[-1]["price"])
+        last_leg_pct = (p1 - p0) / p0 * 100 if p0 else None
+
+    if n >= 6:
+        stage_note = "近期已出現5段以上轉折，型態上可能完成一組推動浪（1-5），留意是否轉入修正浪（A-B-C），僅供參考"
+    elif n >= 4:
+        stage_note = "出現3-4段轉折，可能處於推動浪中段，趨勢仍在發展，尚未完整成形"
+    else:
+        stage_note = "轉折段數不足，僅能判斷目前處於上升段或下降段，無法完整計數"
+
+    return {
+        "available": True, "pivots": recent,
+        "current_leg": recent.iloc[-1]["type"],
+        "current_leg_chg_pct": last_leg_pct,
+        "stage_note": stage_note,
+    }
+
+
+# ── 技術線型截圖：AI 解讀＋與自動數據交叉比對 ─────────────────────────
+
+def analyze_chart_screenshot(image_bytes: bytes, api_key: str) -> dict:
+    """
+    呼叫 Claude Vision 解讀使用者上傳的技術線型截圖。
+    規則：AI 只能回報畫面上『實際可辨識』的文字／數值，不得臆測畫面沒有的資訊，
+    輸出結構化 JSON，以便後續與 FinMind 自動抓取的量化數據做交叉比對，
+    避免整個判讀流於主觀。
+    """
+    try:
+        import anthropic
+    except ImportError:
+        return {"error": "尚未安裝 anthropic 套件，請先在終端機執行：pip install anthropic"}
+
+    media_type = "image/png"
+    try:
+        from PIL import Image
+        import io as _io
+        img = Image.open(_io.BytesIO(image_bytes))
+        if img.format == "JPEG":
+            media_type = "image/jpeg"
+    except Exception:
+        pass
+
+    b64_img = base64.b64encode(image_bytes).decode()
+
+    prompt = """你是一位嚴謹的股市技術分析助手。請只根據這張截圖「畫面上實際顯示」的文字與圖形做判讀，
+不要臆測或編造畫面沒有出現的資訊。若某個欄位畫面沒有顯示，請填「未顯示」。
+
+請以「純JSON」格式回覆（不要加任何說明文字、不要用markdown code block包住），欄位如下：
+{
+  "chart_type": "這張截圖是什麼類型的畫面（K線圖／法人買賣超／融資融券／當沖統計／其他）",
+  "stock_name_or_id": "畫面上顯示的股票代碼或名稱，若無則填未顯示",
+  "date_or_range": "畫面上顯示的日期或期間，若無則填未顯示",
+  "ma_alignment": "均線排列狀態（多頭排列／空頭排列／糾結不明／未顯示），需依畫面上實際均線數值判斷",
+  "candlestick_pattern": "畫面上可辨識的K線型態描述，若無明顯型態或看不清楚請填未顯示",
+  "volume_signal": "成交量與價格的關係（量增價漲／量縮價跌／背離／未顯示）",
+  "institutional_net": "畫面上顯示的法人買賣超數字或文字，若無則填未顯示",
+  "trust_net": "畫面上顯示的投信買賣超或投信庫存數字，若無則填未顯示",
+  "margin_change": "畫面上顯示的融資增減資訊，若無則填未顯示",
+  "day_trading_ratio": "畫面上顯示的當沖比例或當沖量，若無則填未顯示",
+  "overall_signal": "綜合畫面上可辨識的數據給出的方向判斷（偏多／中性／偏空），必須註明是根據哪些具體畫面數據得出",
+  "confidence_note": "誠實說明這個判讀的把握程度，畫面資訊不足時要明確說明，不要給過度自信的結論"
+}"""
+
+    text = ""
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        msg = client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=1024,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64_img}},
+                    {"type": "text", "text": prompt},
+                ],
+            }],
+        )
+        text = msg.content[0].text.strip()
+        if text.startswith("```"):
+            text = text.strip("`")
+            if "\n" in text:
+                text = text.split("\n", 1)[1]
+            if text.lower().startswith("json"):
+                text = text[4:]
+        extracted = json.loads(text)
+        return {
+            "extracted": extracted,
+            "signal_reading": f"{extracted.get('overall_signal', 'N/A')}｜{extracted.get('confidence_note', '')}",
+        }
+    except json.JSONDecodeError:
+        return {"error": "AI 回覆非標準JSON格式，請重試一次", "raw": text}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def cross_check_vision_vs_data(vr: dict, inst_sig: dict | None,
+                                margin_sig: dict | None, dt_sig: dict | None) -> list[str]:
+    """比對AI從截圖讀到的方向性描述，與FinMind自動抓取數據的方向是否一致"""
+    notes = []
+    ext = vr.get("extracted", {})
+
+    def has(v, *kws):
+        return isinstance(v, str) and any(k in v for k in kws)
+
+    trust_txt = ext.get("trust_net", "")
+    if inst_sig and trust_txt and "未顯示" not in trust_txt:
+        auto_buy = inst_sig["trust_net5"] > 0
+        shot_buy, shot_sell = has(trust_txt, "買超", "買進", "增"), has(trust_txt, "賣超", "賣出", "減")
+        if (shot_buy and auto_buy) or (shot_sell and not auto_buy):
+            notes.append(f"✅ 投信方向一致：截圖顯示「{trust_txt}」，自動數據近5日淨{'買' if auto_buy else '賣'} {abs(inst_sig['trust_net5']):,.0f} 張")
+        elif shot_buy or shot_sell:
+            notes.append(f"⚠️ 投信方向可能不一致：截圖顯示「{trust_txt}」，自動數據近5日淨{'買' if auto_buy else '賣'} {abs(inst_sig['trust_net5']):,.0f} 張 —— 請確認兩者時間區間是否相同")
+
+    margin_txt = ext.get("margin_change", "")
+    if margin_sig and margin_sig.get("margin_chg_pct") is not None and margin_txt and "未顯示" not in margin_txt:
+        auto_up = margin_sig["margin_chg_pct"] > 0
+        shot_up, shot_down = has(margin_txt, "增", "上升", "增加"), has(margin_txt, "減", "下降", "減少")
+        if (shot_up and auto_up) or (shot_down and not auto_up):
+            notes.append(f"✅ 融資方向一致：截圖顯示「{margin_txt}」，自動數據5日變化 {margin_sig['margin_chg_pct']:+.1f}%")
+        elif shot_up or shot_down:
+            notes.append(f"⚠️ 融資方向可能不一致：截圖顯示「{margin_txt}」，自動數據5日變化為 {margin_sig['margin_chg_pct']:+.1f}% —— 請確認兩者時間區間是否相同")
+
+    if not notes:
+        notes.append("ℹ️ 截圖未包含可與自動數據直接比對的具體法人／融資數字，此截圖僅作為圖形輔助參考，實際評分仍以上方「籌碼面技術評分」的量化數據為準")
+    return notes
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -371,6 +810,17 @@ def build_html_report(rd: dict) -> str:
 </div>
 
 <div class="section">
+  <h2>籌碼面技術評分（融資／三大法人／投信／當沖）</h2>
+  <table>
+    <tr><th>項目</th><th>數值</th></tr>
+    <tr class="highlight"><td>籌碼面技術評分</td><td>{rd.get("chip_tech_grade","N/A")}（{rd.get("chip_tech_score","N/A")} / 100）</td></tr>
+    <tr><td>評分細項</td><td>{rd.get("chip_tech_summary","N/A")}</td></tr>
+    <tr><td>波浪理論輔助判讀</td><td>{rd.get("wave_note","未評估")}</td></tr>
+  </table>
+  <p style="font-size:12px;color:#888">資料來源：台灣證交所公開交易資訊（經FinMind彙整），固定門檻規則式評分，非AI主觀判斷</p>
+</div>
+
+<div class="section">
   <h2>投資策略與資金配置（v5 基本面停損）</h2>
   <table>
     <tr><th>項目</th><th>建議</th></tr>
@@ -404,7 +854,7 @@ def sidebar() -> tuple[str, bool]:
             "輸入股票代碼或公司名稱",
             placeholder="例：2317 或 鴻海",
         ).strip()
-        clicked = st.button("🔍 開始分析", type="primary", use_container_width=True)
+        clicked = st.button("🔍 開始分析", type="primary", width="stretch")
         st.markdown("---")
         st.markdown("**流程概覽**")
         st.markdown("""
@@ -415,6 +865,9 @@ def sidebar() -> tuple[str, bool]:
 📊 ①②③　營收預估
 📐 ④–⑧　EPS/股利預估
 🐋 STEP 6　大戶籌碼
+🔬 STEP 6b　籌碼技術評分
+🌊 STEP 6c　波浪輔助判讀
+📸 STEP 6d　截圖AI解讀
 📅 STEP 7　投資策略
 💰 STEP 8　資金配置
 📋 STEP 9　輸出報告
@@ -498,6 +951,10 @@ def main():
         price    = fetch_latest_price(sid)
         div_df   = fetch_dividend(sid)
         chip_df  = fetch_chip_data(sid)
+        price_hist_df = fetch_price_history(sid)
+        margin_df     = fetch_margin_data(sid)
+        inst_df       = fetch_institutional_data(sid)
+        dt_df         = fetch_day_trading(sid)
     rpt["price"] = f"{price:.1f}" if price else "N/A"
 
     # ════════════════════════════════════════════════════════════
@@ -542,7 +999,7 @@ def main():
                 plot_bgcolor="white", paper_bgcolor="white",
                 margin=dict(t=40, b=20),
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         else:
             st.warning("⚠️ 無法自動取得 EPS，請手動填入：")
             cy = datetime.now().year
@@ -689,7 +1146,7 @@ def main():
                          labels={"revenue": "營收（元）"})
             fig.update_layout(height=260, plot_bgcolor="white",
                               paper_bgcolor="white", margin=dict(t=36,b=10))
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
         if A > 0:
             C = A * (1 + B / 100)
@@ -789,7 +1246,7 @@ def main():
                 "⑥ 預估 EPS（元）":     [f"{eps_c:.2f}", f"{eps_b:.2f}", f"{eps_o:.2f}"],
                 "⑧ 預估現金股利（元）": [f"{div_c:.2f}", f"{div_b:.2f}", f"{div_o:.2f}"],
             })
-            st.dataframe(table, hide_index=True, use_container_width=True)
+            st.dataframe(table, hide_index=True, width="stretch")
 
             # Yield
             if price:
@@ -849,7 +1306,7 @@ def main():
             show_cols = [c for c in chip_df.columns
                          if any(k in c for k in ["date","HoldingSharesLevel","percent","400","foreign"])]
             st.dataframe(chip_df.tail(18)[show_cols or chip_df.columns.tolist()],
-                         use_container_width=True)
+                         width="stretch")
             rpt["chip_signal"] = "自動取得資料，請依表格研判"
         else:
             st.info("💡 自動取得失敗，請手動填入近6週數據（來源：集保戶股權分散表 / wantgoo.com）")
@@ -905,6 +1362,134 @@ def main():
                         signal = "➡️ 籌碼穩定，無明顯異常（建議持續觀察）"
                     st.markdown(f'<div class="ok-pass">{signal}</div>', unsafe_allow_html=True)
                     rpt["chip_signal"] = signal
+
+    # ════════════════════════════════════════════════════════════
+    #  STEP 6b 籌碼面技術評分（融資／三大法人／投信／當沖）
+    # ════════════════════════════════════════════════════════════
+    st.markdown("---")
+    with st.expander("🔬 STEP 6b ｜ 籌碼面技術評分（融資增減／法人買賣超／投信買賣超／信用當沖）", expanded=True):
+        st.caption("資料來源：台灣證交所公開交易資訊（經 FinMind API 彙整），採固定門檻規則式評分，非AI主觀判斷")
+
+        inst_sig   = calc_institutional_signal(inst_df)
+        margin_sig = calc_margin_signal(margin_df, price_hist_df)
+        dt_sig     = calc_day_trading_signal(dt_df, price_hist_df)
+        chip_tech_score, chip_tech_items = calc_chip_tech_score(inst_sig, margin_sig, dt_sig)
+        ctg, ctc = grade_score(chip_tech_score)
+
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            st.markdown(f"""
+            <div style="background:white;border:2px solid {ctc};border-radius:12px;padding:18px;text-align:center">
+              <div style="font-size:13px;color:#555;font-weight:600">籌碼面技術評分</div>
+              <div style="font-size:44px;font-weight:800;color:{ctc};line-height:1.1">{ctg}</div>
+              <div style="font-size:22px;font-weight:700;color:{ctc}">{chip_tech_score} / 100</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with c2:
+            st.markdown("**📋 評分細項（四構面各25分）**")
+            for icon, desc, pts in chip_tech_items:
+                st.markdown(f"{icon} {desc} **({pts}分)**")
+
+        # 原始數據呈現（可攤開檢視）
+        with st.expander("查看原始數據", expanded=False):
+            cc1, cc2 = st.columns(2)
+            with cc1:
+                if inst_sig:
+                    st.markdown(f"- 三大法人 5日淨買賣：**{inst_sig['inst_net5']:+,.0f}** 張")
+                    st.markdown(f"- 三大法人 10日淨買賣：**{inst_sig['inst_net10']:+,.0f}** 張")
+                    st.markdown(f"- 投信 5日淨買賣：**{inst_sig['trust_net5']:+,.0f}** 張")
+                    st.markdown(f"- 投信連續買超：**{inst_sig['trust_buy_streak']}** 日／連續賣超：**{inst_sig['trust_sell_streak']}** 日")
+                else:
+                    st.caption("三大法人／投信資料不足")
+            with cc2:
+                if margin_sig:
+                    st.markdown(f"- 融資餘額5日變化：**{margin_sig['margin_chg_pct']:+.1f}%**")
+                    if margin_sig.get("price_chg_pct") is not None:
+                        st.markdown(f"- 股價同期變化：**{margin_sig['price_chg_pct']:+.1f}%**")
+                else:
+                    st.caption("融資資料不足")
+                if dt_sig:
+                    st.markdown(f"- 近5日信用當沖比例平均：**{dt_sig['day_trading_ratio_avg']:.1f}%**")
+                else:
+                    st.caption("當沖資料不足")
+
+        rpt.update({
+            "chip_tech_score": chip_tech_score, "chip_tech_grade": ctg,
+            "chip_tech_summary": "；".join(f"{i[0]}{i[1]}" for i in chip_tech_items),
+        })
+
+    # ════════════════════════════════════════════════════════════
+    #  STEP 6c 波浪理論輔助判讀（ZigZag，輔助非定論）
+    # ════════════════════════════════════════════════════════════
+    st.markdown("---")
+    with st.expander("🌊 STEP 6c ｜ 波浪理論輔助判讀（ZigZag 轉折點，輔助判讀非定論）", expanded=False):
+        st.caption("以固定規則的 ZigZag 演算法客觀標記轉折高低點，輔助波浪計數；正式艾略特波浪理論仍需搭配型態、量能、費波那契比率等多重確認，本模組僅供參考")
+
+        zz_pct = st.slider("轉折敏感度（反向變動幅度%才視為新轉折點）", 2.0, 10.0, 5.0, 0.5, key="zz_pct")
+        pivots = zigzag_pivots(price_hist_df, pct_threshold=zz_pct)
+        wave = simple_wave_count(pivots)
+
+        if wave.get("available") and not price_hist_df.empty:
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=price_hist_df["date"], y=price_hist_df["close"],
+                mode="lines", name="收盤價", line=dict(color="#c7c7c7", width=1),
+            ))
+            pv = wave["pivots"]
+            fig.add_trace(go.Scatter(
+                x=pv["date"], y=pv["price"], mode="lines+markers+text",
+                text=pv["wave_label"], textposition="top center",
+                name="ZigZag轉折", line=dict(color="#7c3aed", width=2),
+                marker=dict(size=8),
+            ))
+            fig.update_layout(height=320, plot_bgcolor="white", paper_bgcolor="white",
+                              margin=dict(t=20, b=20), title=f"{sname} 近期轉折點與簡化波浪標記")
+            st.plotly_chart(fig, width="stretch")
+
+            st.markdown(f'<div class="chip-box">📍 目前所處：<b>{wave["current_leg"]}</b>'
+                        + (f"（波段變動 {wave['current_leg_chg_pct']:+.1f}%）" if wave["current_leg_chg_pct"] is not None else "")
+                        + f"<br>{wave['stage_note']}</div>", unsafe_allow_html=True)
+            rpt["wave_note"] = wave["stage_note"]
+        else:
+            st.info("近期股價轉折段數不足或資料不足，暫無法標記波浪，可調降敏感度門檻試試")
+
+    # ════════════════════════════════════════════════════════════
+    #  STEP 6d 技術線型截圖 AI 解讀＋自動數據交叉比對
+    # ════════════════════════════════════════════════════════════
+    st.markdown("---")
+    with st.expander("📸 STEP 6d ｜ 技術線型截圖 AI 解讀＋自動數據交叉比對（選用）", expanded=False):
+        st.caption("上傳看盤軟體截圖（如K線圖、法人買賣超畫面），AI 僅會回報畫面上實際可辨識的數據，並與上方 FinMind 自動抓取的數據交叉比對，避免主觀臆測")
+
+        api_key = st.text_input(
+            "Anthropic API Key（僅本次session使用，不會被儲存）",
+            type="password", key="anthropic_key",
+            help="至 https://console.anthropic.com 申請，用量計費，每次解讀約數美分",
+        )
+        uploaded = st.file_uploader("上傳或貼上技術線型截圖", type=["png", "jpg", "jpeg"], key="chart_upload")
+
+        if uploaded and api_key:
+            if st.button("🔍 開始 AI 解讀截圖", key="run_vision"):
+                with st.spinner("AI 正在解讀截圖…"):
+                    result = analyze_chart_screenshot(uploaded.getvalue(), api_key)
+                if result.get("error"):
+                    st.error(f"解讀失敗：{result['error']}")
+                else:
+                    st.session_state["vision_result"] = result
+
+        if st.session_state.get("vision_result"):
+            vr = st.session_state["vision_result"]
+            st.markdown("**📄 AI 從截圖中辨識到的數據**")
+            st.json(vr.get("extracted", {}))
+            st.markdown(f"**AI 訊號判讀：** {vr.get('signal_reading', 'N/A')}")
+
+            # 交叉比對：AI從截圖讀到的方向 vs 自動抓取數據方向
+            cross_notes = cross_check_vision_vs_data(vr, inst_sig, margin_sig, dt_sig)
+            if cross_notes:
+                st.markdown("**🔄 與自動抓取數據交叉比對**")
+                for note in cross_notes:
+                    st.markdown(f"- {note}")
+        elif uploaded and not api_key:
+            st.warning("請先輸入 Anthropic API Key 才能進行 AI 解讀")
 
     # ════════════════════════════════════════════════════════════
     #  STEP 7 策略
