@@ -2,7 +2,10 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="台股分析">
+<meta name="theme-color" content="#1a3a6b">
 <title>台股技術／籌碼分析工具（純網頁版）</title>
 <style>
   * { box-sizing: border-box; }
@@ -87,6 +90,20 @@
 
   footer { text-align: center; color: #aaa; font-size: 11px; margin-top: 30px; padding: 16px; border-top: 1px solid #eee; }
   .hidden { display: none !important; }
+
+  /* 手機版：縮小留白；輸入框 16px 以上，避免 iOS Safari 點擊時自動放大畫面 */
+  @media (max-width: 640px) {
+    .wrap { padding: 12px 10px 40px; }
+    .title-banner { padding: 16px 18px; }
+    .title-banner h1 { font-size: 19px; }
+    .card { padding: 14px 12px; margin: 12px 0; }
+    .card h2 { font-size: 16px; }
+    input[type=text], input[type=password] { font-size: 16px; }
+    .input-row button { flex: 1 0 100%; padding: 12px 18px; font-size: 16px; }
+    .score-badge { min-width: 0; flex: 1 0 100%; padding: 12px; }
+    .item-list { min-width: 0; }
+    table.inst-table th, table.inst-table td { padding: 6px; }
+  }
 </style>
 </head>
 <body>
@@ -181,12 +198,14 @@
 
 <script>
 // 透過「3_啟動網頁版.bat」以 http://localhost 開啟時，改走同網域的本機代理
-// /api/finmind（finmind_proxy_server.py），避開瀏覽器 CORS 或公司網路阻擋。
-// 若直接雙擊 HTML（file://）開啟，則退回直接呼叫 FinMind 官方網址。
+// /api/finmind（finmind_proxy_server.py），避開公司網路阻擋。
+// 其他情況（GitHub Pages、iPhone、直接雙擊 file://）一律直接呼叫 FinMind 官方網址，
+// FinMind 有回傳 Access-Control-Allow-Origin: *，瀏覽器可直接跨來源存取。
 // 圖表全部改用 SVG 自行繪製，不再載入任何外部函式庫（例如 Plotly），
 // 即使環境擋外部網站也能正常畫圖。
 const FINMIND_DIRECT = "https://api.finmindtrade.com/api/v4/data";
-const FINMIND_BASE = location.protocol.startsWith("http") ? "/api/finmind" : FINMIND_DIRECT;
+const IS_LOCAL_PROXY = ["localhost", "127.0.0.1"].includes(location.hostname);
+const FINMIND_BASE = IS_LOCAL_PROXY ? "/api/finmind" : FINMIND_DIRECT;
 
 // ══════════════════════════════════════════════════════════════
 //  資料抓取
@@ -277,14 +296,31 @@ async function fetchExchangeRate(days = 130) {
 // ══════════════════════════════════════════════════════════════
 
 let stockListCache = null;
+const STOCK_LIST_KEY = "stockListCache_v1";
+
+// 股票清單約 57KB，存在瀏覽器裡一天只抓一次，手機上第二次查詢就不必再等
+function loadStockListFromStorage() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STOCK_LIST_KEY) || "null");
+    if (saved && saved.day === new Date().toDateString() && Array.isArray(saved.list)) return saved.list;
+  } catch (e) { /* 私密瀏覽或儲存空間被擋時直接重抓 */ }
+  return null;
+}
 
 async function fetchStockList() {
   if (stockListCache) return stockListCache;
+  const saved = loadStockListFromStorage();
+  if (saved) return (stockListCache = saved);
   try {
     const res = await fetch(`${FINMIND_BASE}?dataset=TaiwanStockInfo`);
     const json = await res.json();
     if (json.status === 200 && Array.isArray(json.data)) {
-      stockListCache = json.data.filter(r => r.type === "twse" || r.type === "tpex");
+      stockListCache = json.data
+        .filter(r => r.type === "twse" || r.type === "tpex")
+        .map(({ stock_id, stock_name, type, industry_category }) => ({ stock_id, stock_name, type, industry_category }));
+      try {
+        localStorage.setItem(STOCK_LIST_KEY, JSON.stringify({ day: new Date().toDateString(), list: stockListCache }));
+      } catch (e) { /* 存不進去就只用記憶體快取 */ }
     } else {
       stockListCache = [];
     }
@@ -687,6 +723,15 @@ function signed(v, digits) { const s = v >= 0 ? "+" : ""; return s + v.toFixed(d
 // 依「顯示的最後 count 筆」畫圖用的 x 座標系；所有面板共用同一 padL/padR 才能對齊
 const PAD = { L: 56, R: 14 };
 
+// 圖表寬度跟著畫面走：viewBox 等於實際顯示寬度，手機上字才不會被等比縮到看不見。
+// 結果區在畫圖時可能還是隱藏的（寬度 0），所以量輸入卡片內的 statusMsg（同寬度）。
+function chartW() {
+  const w = document.getElementById("statusMsg").clientWidth || 900;
+  return Math.max(300, Math.min(900, Math.round(w)));
+}
+function chartH(h) { return Math.round(h * Math.max(0.7, chartW() / 900)); }
+function titleFs(W) { return W < 600 ? 12 : 14; }
+
 function xLabelsSvg(dates, padT, plotH, plotW, step) {
   // 在底部標示約 6 個日期
   const n = dates.length;
@@ -702,7 +747,7 @@ function xLabelsSvg(dates, padT, plotH, plotW, step) {
 }
 
 function renderPriceChartSVG(full, sname) {
-  const W = 900, H = 400, padT = 40, padB = 22;
+  const W = chartW(), H = chartH(400), padT = 40, padB = 22;
   const viewN = Math.min(60, full.length);
   const s = full.length - viewN;
   const view = full.slice(s);
@@ -751,7 +796,7 @@ function renderPriceChartSVG(full, sname) {
   svg += maLine(ma20, "#0891b2");
   svg += maLine(ma60, "#92400e");
   // 標題 + 圖例
-  svg += `<text x="${W / 2}" y="20" font-size="14" fill="#1a3a6b" text-anchor="middle" font-weight="700">${esc(sname)} 近${viewN}個交易日 K線圖</text>`;
+  svg += `<text x="${W / 2}" y="20" font-size="${titleFs(W)}" fill="#1a3a6b" text-anchor="middle" font-weight="700">${esc(sname)} 近${viewN}個交易日 K線圖</text>`;
   const legend = [["MA5", "#e6b800"], ["MA10", "#c026d3"], ["MA20", "#0891b2"], ["MA60", "#92400e"]];
   let lx = PAD.L;
   legend.forEach(([nm, c]) => {
@@ -769,7 +814,7 @@ function renderPriceChartSVG(full, sname) {
 }
 
 function renderVolumeSVG(view, viewN, step) {
-  const W = 900, H = 150, padT = 22, padB = 20;
+  const W = chartW(), H = chartH(150), padT = 22, padB = 20;
   const plotH = H - padT - padB;
   const cx = i => PAD.L + step * (i + 0.5);
   const vmax = Math.max(...view.map(r => r.volume), 1);
@@ -791,7 +836,7 @@ function renderVolumeSVG(view, viewN, step) {
 }
 
 function renderMacdSVG(full, s, viewN, step, dates) {
-  const W = 900, H = 170, padT = 22, padB = 20;
+  const W = chartW(), H = chartH(170), padT = 22, padB = 20;
   const plotH = H - padT - padB;
   const cx = i => PAD.L + step * (i + 0.5);
   const macd = calcMACD(full.map(r => r.close));
@@ -826,7 +871,7 @@ function renderMacdSVG(full, s, viewN, step, dates) {
 }
 
 function renderWaveChartSVG(priceRows, wave, sname) {
-  const W = 900, H = 360, padT = 36, padB = 22;
+  const W = chartW(), H = chartH(360), padT = 36, padB = 22;
   const view = priceRows.slice(Math.max(0, priceRows.length - 90));
   const dates = view.map(r => r.date);
   const closes = view.map(r => r.close);
@@ -846,7 +891,7 @@ function renderWaveChartSVG(priceRows, wave, sname) {
   });
   const closePts = closes.map((v, i) => `${cx(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
   svg += `<polyline points="${closePts}" fill="none" stroke="#c7c7c7" stroke-width="1.2"/>`;
-  svg += `<text x="${W / 2}" y="20" font-size="14" fill="#1a3a6b" text-anchor="middle" font-weight="700">${esc(sname)} 近期轉折點與簡化波浪標記</text>`;
+  svg += `<text x="${W / 2}" y="20" font-size="${titleFs(W)}" fill="#1a3a6b" text-anchor="middle" font-weight="700">${esc(sname)} 近期轉折點與簡化波浪標記</text>`;
 
   if (wave.available) {
     const dateIdx = new Map(view.map((r, i) => [r.date, i]));
@@ -867,7 +912,7 @@ function renderWaveChartSVG(priceRows, wave, sname) {
 }
 
 function renderFxChartSVG(fx, sname) {
-  const W = 900, H = 300, padT = 40, padB = 22;
+  const W = chartW(), H = chartH(300), padT = 40, padB = 22;
   const view = fx.view;
   const dates = view.map(v => v.date);
   const n = view.length;
@@ -882,7 +927,7 @@ function renderFxChartSVG(fx, sname) {
   const yc = v => padT + (1 - (v - cmin) / ((cmax - cmin) || 1)) * plotH;
   const yr = v => padT + (1 - (v - rmin) / ((rmax - rmin) || 1)) * plotH;
 
-  let svg = `<text x="${W / 2}" y="20" font-size="14" fill="#1a3a6b" text-anchor="middle" font-weight="700">${esc(sname)} 收盤價 vs 美元/新台幣（走勢對照，各自縮放）</text>`;
+  let svg = `<text x="${W / 2}" y="20" font-size="${titleFs(W)}" fill="#1a3a6b" text-anchor="middle" font-weight="700">${esc(sname)} 收盤價 vs 美元/新台幣${W < 600 ? "" : "（走勢對照，各自縮放）"}</text>`;
   const cPts = closes.map((v, i) => `${cx(i).toFixed(1)},${yc(v).toFixed(1)}`).join(" ");
   const rPts = rates.map((v, i) => `${cx(i).toFixed(1)},${yr(v).toFixed(1)}`).join(" ");
   svg += `<polyline points="${cPts}" fill="none" stroke="#c02020" stroke-width="1.6"/>`;
@@ -1107,8 +1152,19 @@ async function runAnalysis() {
 
     // 波浪
     updateWave(priceRows, sname);
+    let wavePending = false;
     document.getElementById("zzSlider").oninput = () => {
       document.getElementById("zzVal").textContent = document.getElementById("zzSlider").value + "%";
+      // 手機拖曳滑桿時事件很密集，每個畫面影格最多重畫一次
+      if (wavePending) return;
+      wavePending = true;
+      requestAnimationFrame(() => { wavePending = false; updateWave(priceRows, sname); });
+    };
+
+    // 手機轉橫／直向時依新寬度重畫圖表
+    redrawCharts = () => {
+      renderPriceChartSVG(priceRows, sname);
+      renderFxEval(fx, sname);
       updateWave(priceRows, sname);
     };
 
@@ -1120,7 +1176,7 @@ async function runAnalysis() {
     const msg = e.message || "";
     const isConnErr = /failed to fetch|networkerror|load failed/i.test(msg);
     const hint = isConnErr
-      ? "無法連到 FinMind。請確認電腦目前有連上網路（公司網路／防火牆／防毒軟體有時會擋 api.finmindtrade.com），稍後再試一次。"
+      ? "無法連到 FinMind。請確認裝置目前有連上網路（公司網路／防火牆／防毒軟體有時會擋 api.finmindtrade.com），稍後再試一次。"
       : "FinMind 可能暫時無回應或當日免費額度已用完，請稍後再試。若持續失敗，可改用桌面版 Streamlit 工具。";
     setStatus(`⚠️ 資料抓取失敗：${msg}。<br>${hint}`, "error");
   } finally {
@@ -1141,6 +1197,18 @@ function updateWave(priceRows, sname) {
     noteEl.innerHTML = `<div class="info-box">近期股價轉折段數不足或資料不足，暫無法標記波浪，可調高敏感度滑桿試試</div>`;
   }
 }
+
+let redrawCharts = null;
+let lastChartW = 0;
+// iOS 捲動時網址列伸縮也會觸發 resize，只在寬度真的改變時才重畫
+window.addEventListener("resize", () => {
+  clearTimeout(window._redrawTimer);
+  window._redrawTimer = setTimeout(() => {
+    const w = chartW();
+    if (redrawCharts && w !== lastChartW) redrawCharts();
+    lastChartW = w;
+  }, 200);
+});
 
 document.getElementById("analyzeBtn").addEventListener("click", () => runAnalysis());
 document.getElementById("stockIdInput").addEventListener("keydown", e => {
