@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="台股分析">
 <meta name="theme-color" content="#1a3a6b">
-<title>台股技術／籌碼分析工具（純網頁版）</title>
+<title>台股投資分析工具</title>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -91,6 +91,41 @@
   footer { text-align: center; color: #aaa; font-size: 11px; margin-top: 30px; padding: 16px; border-top: 1px solid #eee; }
   .hidden { display: none !important; }
 
+  .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 10px 0; }
+  .metric { background: #f7f9ff; border: 1px solid #e2e7f2; border-radius: 8px; padding: 10px 12px; min-width: 0; }
+  .metric .m-label { font-size: 12px; color: #666; }
+  .metric .m-value { font-size: 18px; font-weight: 700; color: #1a3a6b; overflow-wrap: anywhere; }
+  .metric .m-note { font-size: 12px; margin-top: 2px; }
+
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px 14px; margin: 10px 0; }
+  .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #444; }
+  .field input, .field select {
+    border: 1px solid #ccd3e0; border-radius: 8px; padding: 9px 10px; font-size: 14px;
+    background: white; color: #333; width: 100%;
+  }
+  .field .hint { font-size: 11.5px; color: #888; }
+
+  .dual-score { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .dual-score .score-badge { min-width: 0; }
+  .verdict { border-radius: 10px; padding: 14px 16px; font-size: 15px; font-weight: 600; margin: 12px 0; border: 2px solid; }
+  .flag-list { margin: 6px 0 0; padding-left: 20px; }
+  .flag-list li { margin: 3px 0; }
+
+  details.fold > summary { cursor: pointer; font-weight: 600; color: #1a3a6b; font-size: 14px; padding: 6px 0; }
+  details.card > summary { cursor: pointer; list-style: none; }
+  details.card > summary::-webkit-details-marker { display: none; }
+  details.card > summary h2 { margin-bottom: 0; }
+  details.card[open] > summary h2 { margin-bottom: 12px; }
+  details.card > summary h2::after { content: "▸ 展開"; float: right; font-size: 12px; color: #888; font-weight: 400; }
+  details.card[open] > summary h2::after { content: "▾ 收合"; }
+
+  table.data-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+  table.data-table th, table.data-table td { border: 1px solid #e2e7f2; padding: 7px 8px; text-align: right; }
+  table.data-table th { background: #eef3ff; color: #1a3a6b; text-align: center; }
+  table.data-table td:first-child { text-align: left; font-weight: 600; }
+  table.data-table tr.hl td { background: #f7f9ff; }
+  .table-wrap { width: 100%; overflow-x: auto; }
+
   /* 手機版：縮小留白；輸入框 16px 以上，避免 iOS Safari 點擊時自動放大畫面 */
   @media (max-width: 640px) {
     .wrap { padding: 12px 10px 40px; }
@@ -98,7 +133,12 @@
     .title-banner h1 { font-size: 19px; }
     .card { padding: 14px 12px; margin: 12px 0; }
     .card h2 { font-size: 16px; }
-    input[type=text], input[type=password] { font-size: 16px; }
+    input[type=text], input[type=password], .field input, .field select { font-size: 16px; }
+    .metric-grid { grid-template-columns: 1fr 1fr; }
+    .metric .m-value { font-size: 16px; }
+    .form-grid { grid-template-columns: 1fr 1fr; }
+    .dual-score .score-badge .grade { font-size: 34px; }
+    table.data-table th, table.data-table td { padding: 6px 5px; font-size: 12.5px; }
     .input-row button { flex: 1 0 100%; padding: 12px 18px; font-size: 16px; }
     .score-badge { min-width: 0; flex: 1 0 100%; padding: 12px; }
     .item-list { min-width: 0; }
@@ -110,8 +150,8 @@
 <div class="wrap">
 
   <div class="title-banner">
-    <h1>📊 台股技術／籌碼分析工具（純網頁版）</h1>
-    <p>不需安裝 Python、不需外部繪圖函式庫，瀏覽器直接開啟即可使用｜資料來源：FinMind 公開 API（彙整自台灣證交所／櫃買中心公開交易資訊）</p>
+    <h1>📊 台股投資分析工具</h1>
+    <p>基本面＋籌碼面＋技術面一次看完｜資料來源：FinMind 公開 API、集保結算所（彙整自台灣證交所／櫃買中心公開資訊）</p>
   </div>
 
   <div class="card">
@@ -125,6 +165,104 @@
   </div>
 
   <div id="resultsArea" class="hidden">
+
+    <div class="card">
+      <h2>🏆 投資評分總結（短期 1-2月／長期 6月-2年）</h2>
+      <p class="caption">依財務、營收、獲利、千張大戶、產業判斷與技術面，以固定規則評分（各 100 分）。修改下方的預估數字或產業判斷，評分會即時更新。</p>
+      <div class="dual-score">
+        <div class="score-badge" id="stBadge">
+          <div class="label">短期 1-2 個月</div>
+          <div class="grade" id="stGrade">–</div>
+          <div class="num" id="stNum">– / 100</div>
+        </div>
+        <div class="score-badge" id="ltBadge">
+          <div class="label">長期 6 個月-2 年</div>
+          <div class="grade" id="ltGrade">–</div>
+          <div class="num" id="ltNum">– / 100</div>
+        </div>
+      </div>
+      <div id="verdictBox"></div>
+      <div id="flagSummary"></div>
+      <details class="fold">
+        <summary>查看評分細項</summary>
+        <div class="raw-data-grid">
+          <div><h3>短期評分細項</h3><div id="stItems"></div></div>
+          <div><h3>長期評分細項</h3><div id="ltItems"></div></div>
+        </div>
+      </details>
+    </div>
+
+    <div class="card">
+      <h2 id="basicTitle">📋 STEP 1–2｜基本資料</h2>
+      <div class="metric-grid" id="basicGrid"></div>
+    </div>
+
+    <div class="card">
+      <h2>📈 STEP 3｜財務基本面</h2>
+      <p class="caption">EPS 為各年 4 季加總（當年度未滿 4 季另標示）；ROE、淨利率以近 4 季（TTM）歸屬母公司淨利計算；負債比率、股本取最新一季資產負債表。</p>
+      <div class="chart-wrap"><div id="epsChartDiv"></div></div>
+      <div class="metric-grid" id="finGrid"></div>
+      <div id="finFlags"></div>
+    </div>
+
+    <div class="card">
+      <h2>📊 營收預估（①②③）</h2>
+      <div class="chart-wrap"><div id="revChartDiv"></div></div>
+      <div class="form-grid">
+        <label class="field"><span id="labelA">① 上年度全年營收 A（億元）</span>
+          <input type="number" inputmode="decimal" step="any" data-key="A"><span class="hint" id="hintA"></span></label>
+        <label class="field"><span id="labelB">② 累計年增率 B（%）</span>
+          <input type="number" inputmode="decimal" step="any" data-key="B"><span class="hint" id="hintB"></span></label>
+      </div>
+      <div id="revResult"></div>
+      <div id="revFlags"></div>
+    </div>
+
+    <div class="card">
+      <h2>📐 EPS／股利預估（④–⑧）</h2>
+      <div class="form-grid">
+        <label class="field"><span>發行股數（億股）</span>
+          <input type="number" inputmode="decimal" step="any" data-key="shares"><span class="hint" id="hintShares"></span></label>
+        <label class="field"><span>⑦ 盈餘分配率 %</span>
+          <input type="number" inputmode="decimal" step="any" data-key="payout"><span class="hint" id="hintPayout"></span></label>
+        <label class="field"><span>保守淨利率 %</span>
+          <input type="number" inputmode="decimal" step="any" data-key="mc"></label>
+        <label class="field"><span>合理淨利率 % ★</span>
+          <input type="number" inputmode="decimal" step="any" data-key="mb"><span class="hint" id="hintMargin"></span></label>
+        <label class="field"><span>樂觀淨利率 %</span>
+          <input type="number" inputmode="decimal" step="any" data-key="mo"></label>
+      </div>
+      <div class="table-wrap" id="epsTable"></div>
+      <div id="yieldBox"></div>
+      <div id="epsFlags"></div>
+    </div>
+
+    <div class="card">
+      <h2>🏭 STEP 4｜產業、護城河與總經（你的判斷）</h2>
+      <p class="caption">這幾項需要你自己判斷，選擇會依股票代號記在這台裝置上，下次查同一檔會自動帶入。</p>
+      <div class="form-grid">
+        <label class="field"><span>產業景氣位置</span><select data-key="cyc">
+          <option>上行期（利多）</option><option selected>高峰期（中性）</option><option>下行期（警示）</option><option>底部期（等待）</option></select></label>
+        <label class="field"><span>競爭護城河</span><select data-key="moat">
+          <option>強（技術/規模壁壘高）</option><option selected>中（有一定優勢）</option><option>弱（易被取代）</option></select></label>
+        <label class="field"><span>政策/地緣風險</span><select data-key="pol">
+          <option>低風險</option><option selected>中等風險</option><option>高風險（制裁/貿易戰）</option></select></label>
+        <label class="field"><span>市占率趨勢</span><select data-key="mshare">
+          <option>持續增加</option><option selected>穩定</option><option>緩慢下滑</option><option>快速流失</option></select></label>
+        <label class="field"><span>利率環境</span><select data-key="rate">
+          <option>降息週期（股市有利）</option><option selected>利率高檔平穩</option><option>升息週期（高P/E承壓）</option></select></label>
+        <label class="field"><span>景氣燈號</span><select data-key="macro">
+          <option>綠燈（穩定擴張）</option><option>黃藍燈（注意）</option><option>藍燈（收縮）</option><option>紅燈（過熱）</option></select></label>
+      </div>
+      <div id="indFlags"></div>
+    </div>
+
+    <div class="card">
+      <h2>🐋 STEP 6｜近 6 週千張大戶持股變化</h2>
+      <p class="caption">資料來源：集保結算所股權分散表（每週六自動更新）；外資持股比例來源：FinMind。看 6 週趨勢比單週可靠。</p>
+      <div class="table-wrap" id="bigTable"></div>
+      <div id="bigSignal"></div>
+    </div>
 
     <div class="card">
       <h2 id="stockTitle">📈 K線圖＋均線＋成交量＋MACD</h2>
@@ -187,6 +325,32 @@
       <div id="waveNote"></div>
     </div>
 
+    <div class="card">
+      <h2>📅 STEP 7｜技術面進場時機（自動判讀）</h2>
+      <p class="caption">由股價自動判斷：股價與 MA20（月線）位置、MACD 方向、是否站穩 MA60（季線，作為關鍵支撐參考）。</p>
+      <div id="entryBox"></div>
+    </div>
+
+    <details class="card">
+      <summary><h2>💰 STEP 8｜資金配置（100 萬台幣）</h2></summary>
+      <div class="metric-grid">
+        <div class="metric"><div class="m-label">總預算</div><div class="m-value">100 萬元</div></div>
+        <div class="metric"><div class="m-label">單檔上限 20%</div><div class="m-value">20 萬元</div></div>
+        <div class="metric"><div class="m-label">分 3 批，每批約</div><div class="m-value">6~7 萬元</div></div>
+        <div class="metric"><div class="m-label">其餘</div><div class="m-value">80 萬元</div><div class="m-note">分散 4~5 檔或現金/ETF</div></div>
+      </div>
+      <div class="info-box">
+        📌 <b>配置建議（v5 基本面停損）</b><br>
+        第 1 批 6 萬：建立基本部位（確認趨勢前）<br>
+        第 2 批 7 萬：趨勢確認後加碼<br>
+        第 3 批 7 萬：突破關鍵阻力後<br><br>
+        🛑 <b>停損原則（非固定 -10%）：</b><br>
+        • <b>長期投資：</b>EPS 預估下修 &gt; 20% → 檢討出場；連續 2 季 EPS 衰退 → 減碼<br>
+        • <b>短期交易：</b>跌破關鍵支撐位 → 出場，不以固定 % 機械停損<br>
+        • <b>估值過高：</b>股價 &gt; 目標價 × 1.3 時縮減部位至 10%
+      </div>
+    </details>
+
   </div>
 
   <footer>
@@ -214,7 +378,10 @@ const FINMIND_BASE = IS_LOCAL_PROXY ? "/api/finmind" : FINMIND_DIRECT;
 async function finmindGet(dataset, dataId, days) {
   const start = new Date();
   start.setDate(start.getDate() - days);
-  const startStr = start.toISOString().slice(0, 10);
+  return finmindGetFrom(dataset, dataId, start.toISOString().slice(0, 10));
+}
+
+async function finmindGetFrom(dataset, dataId, startStr) {
   // FinMind v4 目前用 data_id 帶代碼；舊參數名 stock_id 會被回 HTTP 400
   const url = `${FINMIND_BASE}?dataset=${dataset}&data_id=${dataId}&start_date=${startStr}`;
   try {
@@ -944,6 +1111,548 @@ function renderFxChartSVG(fx, sname) {
 //  UI 綁定
 // ══════════════════════════════════════════════════════════════
 
+// ══════════════════════════════════════════════════════════════
+//  基本面（STEP 1–5）、營收／EPS／股利預估、千張大戶、進場時機、投資評分
+//  移植自桌面版 stock_analyzer/app.py，並修正兩個資料問題：
+//  - FinMind 財報沒有 ROE／淨利率／負債比率／發行股數欄位，改由原始科目計算
+//  - 月營收的 date 是「公布月份」，所屬月份要看 revenue_year／revenue_month
+// ══════════════════════════════════════════════════════════════
+
+async function fetchBigHolders(stockId) {
+  // 由 GitHub Actions 每週抓集保資料產生（scripts/fetch_tdcc.py），與網頁同網域
+  try {
+    const res = await fetch(`data/tdcc/${stockId}.json`, { cache: "no-cache" });
+    if (!res.ok) return null;
+    const json = await res.json();
+    return Array.isArray(json.weeks) ? json.weeks : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function fetchFundamentals(stockId) {
+  const cy = new Date().getFullYear();
+  // 基本面任何一項抓不到都不該讓整個分析失敗
+  const safe = p => p.catch(e => { console.error(e); return []; });
+  const [rev, fin, bal, div, foreign, bigHolders] = await Promise.all([
+    safe(finmindGetFrom("TaiwanStockMonthRevenue", stockId, `${cy - 2}-01-01`)),
+    safe(finmindGetFrom("TaiwanStockFinancialStatements", stockId, `${cy - 4}-01-01`)),
+    safe(finmindGetFrom("TaiwanStockBalanceSheet", stockId, `${cy - 2}-01-01`)),
+    safe(finmindGetFrom("TaiwanStockDividend", stockId, `${cy - 5}-01-01`)),
+    safe(finmindGet("TaiwanStockShareholding", stockId, 60)),
+    fetchBigHolders(stockId),
+  ]);
+  return { rev, fin, bal, div, foreign, bigHolders };
+}
+
+function seriesOf(rows, type) {
+  return rows.filter(r => r.type === type)
+    .map(r => ({ date: r.date, value: Number(r.value) }))
+    .filter(r => !isNaN(r.value))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+const sumOf = arr => arr.reduce((s, v) => s + v, 0);
+const lastOf = arr => arr.length ? arr[arr.length - 1] : null;
+// 億元金額：加千分位，不縮寫成 K（避免「24K 億」這種看不懂的寫法）
+const fmtYi = v => v.toLocaleString(undefined, { maximumFractionDigits: Math.abs(v) < 100 ? 1 : 0 });
+
+function calcFinancials(fin, bal) {
+  const epsQ = seriesOf(fin, "EPS");
+  const niQ = seriesOf(fin, "EquityAttributableToOwnersOfParent");   // 歸屬母公司淨利（單季）
+  const revQ = seriesOf(fin, "Revenue");
+
+  // 年度彙總：4 季齊全才算完整年度
+  const years = {};
+  epsQ.forEach(r => {
+    const y = +r.date.slice(0, 4);
+    (years[y] = years[y] || { eps: 0, q: 0 });
+    years[y].eps += r.value; years[y].q += 1;
+  });
+  const annualEps = Object.keys(years).map(Number).sort()
+    .map(y => ({ year: y, eps: years[y].eps, quarters: years[y].q, complete: years[y].q === 4 }));
+  const completeEps = annualEps.filter(a => a.complete);
+
+  const ttm = arr => arr.length >= 4 ? sumOf(arr.slice(-4).map(r => r.value)) : null;
+  const ttmPrev = arr => arr.length >= 8 ? sumOf(arr.slice(-8, -4).map(r => r.value)) : null;
+  const ttmEps = ttm(epsQ), prevTtmEps = ttmPrev(epsQ);
+  const ttmNi = ttm(niQ), ttmRev = ttm(revQ);
+
+  const equity = seriesOf(bal, "EquityAttributableToOwnersOfParent");
+  const eqNow = lastOf(equity);
+  const eqYearAgo = equity.length >= 5 ? equity[equity.length - 5] : equity[0];
+  const avgEq = eqNow && eqYearAgo ? (eqNow.value + eqYearAgo.value) / 2 : null;
+  const roe = ttmNi !== null && avgEq ? ttmNi / avgEq * 100 : null;
+
+  const netMargin = ttmNi !== null && ttmRev ? ttmNi / ttmRev * 100 : null;
+
+  let debtRatio = lastOf(seriesOf(bal, "Liabilities_per"));
+  debtRatio = debtRatio ? debtRatio.value : null;
+  if (debtRatio === null) {
+    const li = lastOf(seriesOf(bal, "Liabilities")), ta = lastOf(seriesOf(bal, "TotalAssets"));
+    if (li && ta && ta.value) debtRatio = li.value / ta.value * 100;
+  }
+
+  // 台股面額幾乎都是 10 元：股數 = 普通股股本 ÷ 10；抓不到再用 淨利 ÷ EPS 反推
+  let shares = lastOf(seriesOf(bal, "OrdinaryShare"));
+  shares = shares ? shares.value / 10 / 1e8 : null;
+  if (!shares && ttmNi && ttmEps) shares = ttmNi / ttmEps / 1e8;
+
+  return {
+    annualEps, completeEps, ttmEps, prevTtmEps, roe, netMargin, debtRatio, shares,
+    latestQuarter: lastOf(epsQ) ? lastOf(epsQ).date : null,
+    hasData: epsQ.length > 0,
+  };
+}
+
+function calcRevenue(rev) {
+  const map = new Map();
+  rev.forEach(r => {
+    const y = Number(r.revenue_year), m = Number(r.revenue_month), v = Number(r.revenue);
+    if (y && m && !isNaN(v)) map.set(y * 100 + m, { y, m, v });
+  });
+  const rows = [...map.values()].sort((a, b) => (a.y * 100 + a.m) - (b.y * 100 + b.m));
+  if (!rows.length) return null;
+  const get = (y, m) => map.get(y * 100 + m);
+  const yearTotal = y => { const r = rows.filter(x => x.y === y); return r.length === 12 ? sumOf(r.map(x => x.v)) : null; };
+
+  const latest = lastOf(rows);
+  const cy = new Date().getFullYear();
+  let A, B, label;
+  if (latest.y === cy) {
+    // 今年已有營收：A = 去年全年，B = 今年累計 vs 去年同期
+    const cur = rows.filter(x => x.y === cy);
+    const ytd = sumOf(cur.map(x => x.v));
+    const lySame = sumOf(cur.map(x => (get(cy - 1, x.m) || { v: 0 }).v));
+    A = yearTotal(cy - 1);
+    B = lySame > 0 ? (ytd - lySame) / lySame * 100 : null;
+    label = `截至 ${cy} 年 ${latest.m} 月累計`;
+  } else {
+    // 年初今年營收還沒公布：用去年全年 vs 前年全年
+    A = yearTotal(latest.y);
+    const prev = yearTotal(latest.y - 1);
+    B = A && prev ? (A - prev) / prev * 100 : null;
+    label = `${latest.y} 全年 vs ${latest.y - 1} 全年`;
+  }
+  const monthly = rows.slice(-24).map(x => {
+    const p = get(x.y - 1, x.m);
+    return { label: `${String(x.y).slice(2)}/${String(x.m).padStart(2, "0")}`, v: x.v, yoy: p && p.v ? (x.v - p.v) / p.v * 100 : null };
+  });
+  return { A: A ? A / 1e8 : null, B, label, aYear: latest.y === cy ? cy - 1 : latest.y, monthly };
+}
+
+function calcDividends(div, completeEps) {
+  // year 欄位是民國年（例如「114年」或季配息「114年第1季」），所屬盈餘年度 = 民國年 + 1911
+  const byYear = {};
+  div.forEach(r => {
+    const roc = parseInt(r.year, 10);
+    if (!roc) return;
+    const cash = (Number(r.CashEarningsDistribution) || 0) + (Number(r.CashStatutorySurplus) || 0);
+    byYear[roc + 1911] = (byYear[roc + 1911] || 0) + cash;
+  });
+  const epsByYear = Object.fromEntries(completeEps.map(a => [a.year, a.eps]));
+  const ratios = Object.keys(byYear).map(Number).sort().filter(y => epsByYear[y] > 0 && byYear[y] > 0)
+    .slice(-2).map(y => byYear[y] / epsByYear[y] * 100);
+  const payout = ratios.length ? Math.round(sumOf(ratios) / ratios.length) : null;
+  const lastYear = Object.keys(byYear).map(Number).filter(y => byYear[y] > 0).sort().pop();
+  return { payout, lastCash: lastYear ? byYear[lastYear] : null, lastCashYear: lastYear || null };
+}
+
+function calcBigHolderSignal(weeks, foreignRows) {
+  const w = (weeks || []).slice(-6);
+  const fRows = foreignRows
+    .map(r => ({ date: r.date, ratio: Number(r.ForeignInvestmentSharesRatio) }))
+    .filter(r => !isNaN(r.ratio))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  if (w.length < 2) return { available: false, weeks: w };
+  const deltaBig = w[w.length - 1].pct400 - w[0].pct400;
+  const delta1000 = w[w.length - 1].pct1000 - w[0].pct1000;
+  const diffs = w.slice(1).map((x, i) => x.pct400 - w[i].pct400);
+  const recent = diffs.slice(-4);
+  const consecDown = recent.filter(d => d < -0.3).length;
+  const consecUp = recent.filter(d => d > 0.1).length;
+
+  // 外資同期間變化：從第一週的日期開始算
+  const firstIso = `${w[0].date.slice(0, 4)}-${w[0].date.slice(4, 6)}-${w[0].date.slice(6, 8)}`;
+  const fSince = fRows.filter(r => r.date >= firstIso);
+  const deltaFor = fSince.length >= 2 ? fSince[fSince.length - 1].ratio - fSince[0].ratio : null;
+
+  const flags = [];
+  if (consecDown >= 4) flags.push("大戶近 4 週持續減持（6 週趨勢向下）");
+  else if (consecDown >= 3) flags.push("大戶近 4 週有 3 週減持，趨勢偏弱，需觀察");
+  if (deltaFor !== null && deltaFor < -5) flags.push(`外資同期間快速撤出 ${signed(deltaFor, 2)}%`);
+  if (deltaFor !== null && deltaBig < -3 && deltaFor < -2) flags.push("大戶與外資同步撤出，籌碼惡化明顯");
+
+  let signal;
+  if (flags.length) signal = "⚠️ 籌碼出現異常，請留意";
+  else if (consecUp >= 3) signal = "✅ 大戶近 4 週有 3 週以上增持，籌碼趨勢正向";
+  else if (deltaBig > 0) signal = "✅ 大戶合計增持，籌碼偏正向";
+  else signal = "➡️ 籌碼穩定，無明顯異常（建議持續觀察）";
+
+  return { available: true, weeks: w, deltaBig, delta1000, deltaFor, flags, signal };
+}
+
+function calcEntrySignals(priceRows, macdSig) {
+  const closes = priceRows.map(r => r.close);
+  const close = lastOf(closes);
+  const ma20 = lastOf(movingAverage(closes, 20));
+  const ma60 = lastOf(movingAverage(closes, 60));
+  const items = [];
+  let count = 0;
+
+  if (ma20) {
+    const d = (close - ma20) / ma20 * 100;
+    if (d > 1) { items.push(`✅ 站上 MA20（月線 ${ma20.toFixed(1)}，股價高 ${d.toFixed(1)}%）`); count++; }
+    else if (d >= -1) items.push(`➡️ 接近 MA20（月線 ${ma20.toFixed(1)}）`);
+    else items.push(`⚠️ 跌破 MA20（月線 ${ma20.toFixed(1)}，股價低 ${Math.abs(d).toFixed(1)}%）`);
+  }
+  if (macdSig) {
+    if (macdSig.cross === "golden") { items.push("✅ MACD 近日黃金交叉"); count++; }
+    else if (macdSig.cross === "dead") items.push("⚠️ MACD 近日死亡交叉");
+    else if (macdSig.difNow > macdSig.deaNow) { items.push("✅ MACD 多方排列（DIF 在 DEA 之上）"); count++; }
+    else items.push("➡️ MACD 空方排列或整理中（DIF 在 DEA 之下）");
+  }
+  if (ma60) {
+    const d = (close - ma60) / ma60 * 100;
+    if (d > 2) { items.push(`✅ 站穩 MA60 季線支撐（${ma60.toFixed(1)}）`); count++; }
+    else if (d >= -2) items.push(`➡️ 靠近 MA60 季線支撐（${ma60.toFixed(1)}），待確認`);
+    else items.push(`⚠️ 跌破 MA60 季線支撐（${ma60.toFixed(1)}）`);
+  }
+  const broken = items.some(t => t.includes("跌破"));
+  return { items, count, broken };
+}
+
+// 評分規則與桌面版 app.py 相同（短期、長期各 100 分）
+function calcInvestScores(c) {
+  const st = [], lt = [];
+  const add = (list, icon, desc, pts) => list.push([icon, desc, pts]);
+  const B = c.B ?? 0;
+
+  if (B >= 15) add(st, "✅", `營收高速成長 ${signed(B, 1)}%`, 25);
+  else if (B >= 8) add(st, "✅", `營收穩健成長 ${signed(B, 1)}%`, 18);
+  else if (B >= 0) add(st, "➡️", `營收微幅成長 ${signed(B, 1)}%`, 10);
+  else add(st, "⚠️", `營收衰退 ${signed(B, 1)}%`, 0);
+
+  if (c.bigDelta === null) add(st, "➡️", "千張大戶資料累積中（以持平計）", 15);
+  else if (c.bigDelta >= 1) add(st, "✅", `大戶持續增持 ${signed(c.bigDelta, 2)}%`, 25);
+  else if (c.bigDelta >= 0) add(st, "➡️", `大戶小幅增持／持平 ${signed(c.bigDelta, 2)}%`, 15);
+  else if (c.bigDelta >= -1) add(st, "⚠️", `大戶小幅減持 ${signed(c.bigDelta, 2)}%`, 5);
+  else add(st, "🔴", `大戶明顯減持 ${signed(c.bigDelta, 2)}%`, 0);
+
+  if (c.cyc.includes("上行")) add(st, "✅", "產業上行期", 20);
+  else if (c.cyc.includes("高峰")) add(st, "➡️", "產業高峰期（中性）", 12);
+  else if (c.cyc.includes("底部")) add(st, "➡️", "產業底部，等待轉機", 8);
+  else add(st, "⚠️", "產業下行期，短期風險高", 0);
+
+  if (c.ttmEps !== null && c.prevTtmEps !== null && c.ttmEps > c.prevTtmEps) add(st, "✅", `近 4 季 EPS 年增（${c.prevTtmEps.toFixed(2)} → ${c.ttmEps.toFixed(2)}）`, 15);
+  else if (c.ttmEps !== null && c.ttmEps > 0) add(st, "➡️", "EPS 正值但未見成長", 8);
+  else add(st, "⚠️", "EPS 衰退、虧損或無資料", 0);
+
+  if (c.techCount >= 2) add(st, "✅", `技術面 ${c.techCount}/3 正向信號`, 15);
+  else if (c.techCount === 1) add(st, "➡️", "技術面 1 項正向信號", 8);
+  else add(st, "⚠️", "技術面信號不明確", 0);
+
+  const roe = c.roe ?? 0;
+  if (roe >= 20) add(lt, "✅", `ROE 優秀 ${roe.toFixed(1)}% ≥ 20%`, 25);
+  else if (roe >= 15) add(lt, "✅", `ROE 健全 ${roe.toFixed(1)}% ≥ 15%`, 18);
+  else if (roe >= 10) add(lt, "➡️", `ROE 尚可 ${roe.toFixed(1)}%（< 15% 門檻）`, 10);
+  else add(lt, "⚠️", c.roe === null ? "ROE 無資料" : `ROE 偏低 ${roe.toFixed(1)}%`, 0);
+
+  const e = c.completeEps.map(a => a.eps);
+  const n = e.length;
+  if (n >= 3 && e[n - 3] < e[n - 2] && e[n - 2] < e[n - 1]) add(lt, "✅", "EPS 連續 3 年成長，品質佳", 25);
+  else if (n >= 2 && e[n - 1] > e[n - 2]) add(lt, "✅", "EPS 近 1 年成長", 15);
+  else if (n >= 1 && e[n - 1] > 0) add(lt, "➡️", "EPS 正值但趨勢平緩", 8);
+  else add(lt, "⚠️", "EPS 衰退，長期動能不足", 0);
+
+  const y = c.yld ?? 0;
+  if (y >= 5) add(lt, "✅", `殖利率優異 ${y.toFixed(1)}% ≥ 5%`, 20);
+  else if (y >= 3) add(lt, "✅", `殖利率良好 ${y.toFixed(1)}% ≥ 3%`, 15);
+  else if (y >= 2) add(lt, "➡️", `殖利率一般 ${y.toFixed(1)}%`, 8);
+  else add(lt, "⚠️", `殖利率偏低 ${y.toFixed(1)}%（或未取得）`, 0);
+
+  if (c.moat.startsWith("強")) add(lt, "✅", "護城河強，競爭壁壘高", 15);
+  else if (c.moat.startsWith("中")) add(lt, "➡️", "護城河中等", 8);
+  else add(lt, "⚠️", "護城河弱，易被取代", 0);
+
+  if (B >= 10) add(lt, "✅", "營收高速成長，業務擴張", 15);
+  else if (B >= 5) add(lt, "✅", "營收穩健成長", 10);
+  else if (B >= 0) add(lt, "➡️", "營收正成長但偏低", 5);
+  else add(lt, "⚠️", "營收負成長，結構性壓力", 0);
+
+  return { st, lt, stScore: sumOf(st.map(i => i[2])), ltScore: sumOf(lt.map(i => i[2])) };
+}
+
+// ── 基本面畫面 ─────────────────────────────────────────────────
+
+let FA = null;   // 目前這檔股票的基本面資料與使用者輸入
+const JUDGE_KEYS = ["cyc", "moat", "pol", "mshare", "rate", "macro"];
+
+function metricHtml(label, value, note, noteColor) {
+  return `<div class="metric"><div class="m-label">${label}</div><div class="m-value">${value}</div>` +
+    (note ? `<div class="m-note" style="color:${noteColor || "#666"}">${note}</div>` : "") + `</div>`;
+}
+
+function flagsHtml(flags, title, okText) {
+  if (flags.length) return `<div class="warn-box"><b>⚠️ ${title}</b><ul class="flag-list">${flags.map(f => `<li>${f}</li>`).join("")}</ul></div>`;
+  return okText ? `<div class="ok-pass">✅ ${okText}</div>` : "";
+}
+
+function renderBarChartSVG(elId, bars, title, fmtV, labelEvery) {
+  const el = document.getElementById(elId);
+  if (!bars.length) { el.innerHTML = ""; return; }
+  const W = chartW(), H = chartH(260), padT = 34, padB = 22;
+  const plotW = W - PAD.L - PAD.R, plotH = H - padT - padB;
+  const vals = bars.map(b => b.value);
+  let mn = Math.min(0, ...vals), mx = Math.max(0, ...vals);
+  const pv = (mx - mn) * 0.12 || 1; mx += pv; if (mn < 0) mn -= pv;
+  const y = v => padT + (1 - (v - mn) / (mx - mn)) * plotH;
+  const step = plotW / bars.length, bw = Math.max(2, step * 0.6);
+  let svg = `<text x="${W / 2}" y="18" font-size="${titleFs(W)}" fill="#1a3a6b" text-anchor="middle" font-weight="700">${esc(title)}</text>`;
+  niceTicks(mn, mx, 4).forEach(t => {
+    svg += `<line x1="${PAD.L}" y1="${y(t).toFixed(1)}" x2="${W - PAD.R}" y2="${y(t).toFixed(1)}" stroke="#eef1f6"/>`;
+    svg += `<text x="${PAD.L - 6}" y="${(y(t) + 3).toFixed(1)}" font-size="10" fill="#999" text-anchor="end">${fmtV(t)}</text>`;
+  });
+  const y0 = y(0);
+  const showValue = step >= 26;
+  bars.forEach((b, i) => {
+    const x = PAD.L + step * (i + 0.5), yy = y(b.value);
+    svg += `<rect x="${(x - bw / 2).toFixed(1)}" y="${Math.min(yy, y0).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0.5, Math.abs(yy - y0)).toFixed(1)}" fill="${b.color}"/>`;
+    if (showValue) svg += `<text x="${x.toFixed(1)}" y="${(b.value >= 0 ? yy - 4 : yy + 12).toFixed(1)}" font-size="10" fill="#444" text-anchor="middle">${fmtV(b.value)}</text>`;
+    if (i % labelEvery === 0 || i === bars.length - 1) svg += `<text x="${x.toFixed(1)}" y="${(H - 6).toFixed(1)}" font-size="10" fill="#888" text-anchor="middle">${esc(b.label)}</text>`;
+  });
+  svg += `<line x1="${PAD.L}" y1="${y0.toFixed(1)}" x2="${W - PAD.R}" y2="${y0.toFixed(1)}" stroke="#bbb"/>`;
+  el.innerHTML = `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" xmlns="${svgNS}">${svg}</svg>`;
+}
+
+function renderFundamentalCharts() {
+  if (!FA) return;
+  const { fin, revenue, sname } = FA;
+  const epsBars = fin.annualEps.slice(-5).map(a => ({
+    label: a.complete ? String(a.year) : `${a.year}(${a.quarters}季)`,
+    value: a.eps,
+    color: !a.complete ? "#a0b4d8" : a.eps > 0 ? "#27ae60" : "#c02020",
+  }));
+  renderBarChartSVG("epsChartDiv", epsBars, `${sname} 年度 EPS（元）`, v => v.toFixed(1), 1);
+  if (revenue) {
+    const revBars = revenue.monthly.map(m => ({
+      label: m.label, value: m.v / 1e8,
+      color: m.yoy === null ? "#2d6abf" : m.yoy >= 0 ? "#2d6abf" : "#a0b4d8",
+    }));
+    renderBarChartSVG("revChartDiv", revBars, `${sname} 近 24 個月月營收（億元，淺色＝年減）`, fmtYi, 6);
+  } else {
+    document.getElementById("revChartDiv").innerHTML = "";
+  }
+}
+
+function setInput(key, value) {
+  const el = document.querySelector(`[data-key="${key}"]`);
+  if (el) el.value = value === null || value === undefined || isNaN(value) ? "" : String(Math.round(value * 100) / 100);
+}
+
+function renderFundamentals(stockId, sname, industry, priceRows, fundData, macdSig) {
+  const fin = calcFinancials(fundData.fin, fundData.bal);
+  const revenue = calcRevenue(fundData.rev);
+  const divs = calcDividends(fundData.div, fin.completeEps);
+  const big = calcBigHolderSignal(fundData.bigHolders, fundData.foreign);
+  const entry = calcEntrySignals(priceRows, macdSig);
+  const price = lastOf(priceRows).close;
+  FA = { stockId, sname, price, fin, revenue, divs, big, entry };
+
+  // STEP 1–2
+  document.getElementById("basicTitle").textContent = `📋 STEP 1–2｜${sname} 基本資料`;
+  document.getElementById("basicGrid").innerHTML =
+    metricHtml("股票代號", esc(stockId)) +
+    metricHtml("公司名稱", esc(sname.replace(/（.*）$/, ""))) +
+    metricHtml("產業別", esc(industry || "N/A")) +
+    metricHtml("目前股價", `${price.toFixed(price < 50 ? 2 : 1)} 元`, lastOf(priceRows).date);
+
+  // STEP 3
+  const flagsA = [];
+  const ce = fin.completeEps;
+  if (ce.length >= 2 && ce[ce.length - 1].eps < ce[ce.length - 2].eps) flagsA.push(`EPS 年度衰退（${ce[ce.length - 2].year}：${ce[ce.length - 2].eps.toFixed(2)} → ${ce[ce.length - 1].year}：${ce[ce.length - 1].eps.toFixed(2)}）`);
+  if (ce.length >= 1 && ce[ce.length - 1].eps <= 0) flagsA.push("EPS 為負（虧損）");
+  if (ce.length >= 3 && ce[ce.length - 1].eps < ce[ce.length - 2].eps && ce[ce.length - 2].eps < ce[ce.length - 3].eps) flagsA.push("EPS 連續 3 年衰退");
+  if (fin.roe !== null && fin.roe < 15) flagsA.push(`ROE 低於 15%（現 ${fin.roe.toFixed(1)}%）—— 非金融股品質門檻`);
+  if (fin.debtRatio !== null && fin.debtRatio > 70) flagsA.push(`負債比率明顯偏高（${fin.debtRatio.toFixed(1)}%）—— 請與同產業比較`);
+  FA.flagsA = flagsA;
+
+  const pct = v => v === null ? "N/A" : `${v.toFixed(1)}%`;
+  document.getElementById("finGrid").innerHTML =
+    metricHtml("近 4 季 EPS", fin.ttmEps === null ? "N/A" : `${fin.ttmEps.toFixed(2)} 元`,
+      fin.prevTtmEps !== null ? `前期 ${fin.prevTtmEps.toFixed(2)} 元` : "", fin.ttmEps > fin.prevTtmEps ? "#27ae60" : "#c02020") +
+    metricHtml("ROE（近 4 季）", pct(fin.roe), fin.roe === null ? "" : fin.roe >= 15 ? "健全 ✅" : "偏低 ⚠️", fin.roe >= 15 ? "#27ae60" : "#e67e22") +
+    metricHtml("稅後淨利率", pct(fin.netMargin), "近 4 季") +
+    metricHtml("負債比率", pct(fin.debtRatio), fin.debtRatio === null ? "" : fin.debtRatio < 60 ? "正常 ✅" : "偏高 ⚠️", fin.debtRatio < 60 ? "#27ae60" : "#e67e22");
+  document.getElementById("finFlags").innerHTML = fin.hasData
+    ? flagsHtml(flagsA, "財務紅旗（任一成立應謹慎）", "財務紅旗確認通過：無明顯財務異常")
+    : `<div class="info-box">查無財報資料（ETF 或新上市股票通常沒有），基本面相關評分以 0 分計。</div>`;
+
+  // 營收、EPS 預估的預設值（使用者可改）
+  const cy = new Date().getFullYear();
+  document.getElementById("labelA").textContent = `① ${revenue ? revenue.aYear : cy - 1} 年全年營收 A（億元）`;
+  document.getElementById("labelB").textContent = `② 年增率 B（%）${revenue ? "— " + revenue.label : ""}`;
+  setInput("A", revenue ? revenue.A : null);
+  setInput("B", revenue ? revenue.B : null);
+  document.getElementById("hintA").textContent = revenue && revenue.A ? "自動取得，可修改" : "⚠️ 無法自動取得，請手動填入";
+  document.getElementById("hintB").textContent = revenue && revenue.B !== null ? "自動計算，可修改" : "⚠️ 無法自動計算，請手動填入";
+
+  const refMargin = fin.netMargin !== null ? fin.netMargin : 2.5;
+  setInput("shares", fin.shares);
+  setInput("payout", divs.payout ?? 52);
+  setInput("mb", refMargin);
+  setInput("mc", refMargin * 0.88);
+  setInput("mo", refMargin * 1.12);
+  document.getElementById("hintShares").textContent = fin.shares ? "由普通股股本 ÷ 面額 10 元換算" : "⚠️ 無法自動取得，請手動填入";
+  document.getElementById("hintPayout").textContent = divs.payout ? "近 2 年現金股利 ÷ EPS 平均" : "無配息紀錄，預設 52%";
+  document.getElementById("hintMargin").textContent = fin.netMargin !== null ? `近 4 季實際 ${fin.netMargin.toFixed(1)}%` : "⚠️ 無財報，預設 2.5%";
+
+  // STEP 4：讀回這檔股票上次的判斷
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(`judge_${stockId}`) || "{}"); } catch (e) { /* 忽略 */ }
+  JUDGE_KEYS.forEach(k => {
+    const el = document.querySelector(`[data-key="${k}"]`);
+    el.value = saved[k] && [...el.options].some(o => o.value === saved[k]) ? saved[k] : el.querySelector("option[selected]") ? el.querySelector("option[selected]").value : el.options[0].value;
+  });
+
+  // STEP 6 千張大戶
+  renderBigHolders(big);
+
+  // STEP 7
+  document.getElementById("entryBox").innerHTML =
+    entry.items.map(t => `<div class="item-row">${t}</div>`).join("") +
+    (entry.count >= 2 ? `<div class="ok-pass">✅ 技術面 ${entry.count}/3 項正向，進場時機偏好</div>`
+      : entry.broken ? `<div class="warn-box">⚠️ 技術面偏弱，建議等待支撐確認後再進場</div>`
+      : `<div class="info-box">➡️ 技術面 ${entry.count}/3 項正向，方向未明，可分批觀察</div>`);
+
+  renderFundamentalCharts();
+  recalcForecast();
+}
+
+function renderBigHolders(big) {
+  const tableEl = document.getElementById("bigTable");
+  const sigEl = document.getElementById("bigSignal");
+  if (!big.weeks.length) {
+    tableEl.innerHTML = "";
+    sigEl.innerHTML = `<div class="info-box">這檔股票目前沒有集保資料（可能是新上市或非一般股票），大戶評分以持平計。</div>`;
+    return;
+  }
+  const fmtD = d => `${d.slice(4, 6)}/${d.slice(6, 8)}`;
+  const rows = big.weeks.slice().reverse().map((w, i) =>
+    `<tr${i === 0 ? ' class="hl"' : ""}><td>${fmtD(w.date)}</td><td>${w.holders1000.toLocaleString()}</td><td>${w.pct1000.toFixed(2)}%</td><td>${w.pct400.toFixed(2)}%</td><td>${w.totalHolders.toLocaleString()}</td></tr>`).join("");
+  tableEl.innerHTML = `<table class="data-table"><tr><th>週</th><th>千張人數</th><th>千張%</th><th>400張%</th><th>總股東</th></tr>${rows}</table>`;
+  if (!big.available) {
+    sigEl.innerHTML = `<div class="info-box">目前只有 ${big.weeks.length} 週資料，每週六自動累積，滿 2 週後開始判讀趨勢。</div>`;
+    return;
+  }
+  const n = big.weeks.length;
+  sigEl.innerHTML =
+    `<div class="metric-grid">` +
+    metricHtml(`400張以上 ${n}週變化`, `${signed(big.deltaBig, 2)}%`, "", big.deltaBig >= 0 ? "#c02020" : "#27ae60") +
+    metricHtml(`千張以上 ${n}週變化`, `${signed(big.delta1000, 2)}%`) +
+    metricHtml("外資持股同期變化", big.deltaFor === null ? "N/A" : `${signed(big.deltaFor, 2)}%`) +
+    metricHtml("資料週數", `${n} 週`, n < 6 ? "累積中，目標 6 週" : "") +
+    `</div>` +
+    flagsHtml(big.flags, "籌碼出走警訊", "") +
+    (big.flags.length ? "" : `<div class="chip-box">${big.signal}</div>`);
+}
+
+function recalcForecast() {
+  if (!FA) return;
+  const v = {};
+  document.querySelectorAll("[data-key]").forEach(el => {
+    v[el.dataset.key] = el.tagName === "SELECT" ? el.value : parseFloat(el.value);
+  });
+  try {
+    localStorage.setItem(`judge_${FA.stockId}`, JSON.stringify(Object.fromEntries(JUDGE_KEYS.map(k => [k, v[k]]))));
+  } catch (e) { /* 存不進去就算了 */ }
+
+  // ③ 營收預估
+  const A = v.A, B = isNaN(v.B) ? null : v.B;
+  const C = A > 0 ? A * (1 + (B ?? 0) / 100) : null;
+  document.getElementById("revResult").innerHTML = C
+    ? `<div class="info-box"><b>③ 今年預估全年營收 C = A × (1 + B)</b><br><span style="font-size:19px;font-weight:700;color:#1a3a6b">${fmtYi(A)} 億 × (1 ${B >= 0 ? "+" : "−"} ${Math.abs(B ?? 0).toFixed(1)}%) = <span style="color:#2d6abf">${fmtYi(C)} 億元</span></span></div>`
+    : `<div class="warn-box">請填入上年度營收 A 以計算預估值</div>`;
+  const flagsC = [];
+  if (B !== null && B < 0) flagsC.push(`年增率 ${B.toFixed(1)}% < 0%，營收萎縮`);
+  document.getElementById("revFlags").innerHTML = flagsHtml(flagsC, "營收衰退警訊", B > 0 ? `營收確認通過：年增率 ${signed(B, 1)}%，正成長` : "");
+
+  // ④–⑧ EPS／股利預估
+  const flagsD = [];
+  let yld = null;
+  if (C && v.shares > 0) {
+    const calc = m => { const eps = C * m / 100 / v.shares; return [eps, eps * v.payout / 100]; };
+    const [epsC, divC] = calc(v.mc), [epsB, divB] = calc(v.mb), [epsO, divO] = calc(v.mo);
+    const row = (nm, m, eps, dv, hl) => `<tr${hl ? ' class="hl"' : ""}><td>${nm}</td><td>${m.toFixed(1)}%</td><td>${fmtYi(C * m / 100)}</td><td>${eps.toFixed(2)}</td><td>${dv.toFixed(2)}</td></tr>`;
+    document.getElementById("epsTable").innerHTML =
+      `<table class="data-table"><tr><th>情境</th><th>淨利率</th><th>⑤淨利(億)</th><th>⑥EPS</th><th>⑧股利</th></tr>` +
+      row("保守", v.mc, epsC, divC) + row("合理 ★", v.mb, epsB, divB, true) + row("樂觀", v.mo, epsO, divO) + `</table>`;
+    yld = divB / FA.price * 100;
+    document.getElementById("yieldBox").innerHTML =
+      `<div class="info-box"><b>預估殖利率（合理情境，股價 ${FA.price} 元）：${yld.toFixed(2)}%</b>　本益比約 ${epsB > 0 ? (FA.price / epsB).toFixed(1) : "N/A"} 倍</div>`;
+    const lastEps = lastOf(FA.fin.completeEps);
+    if (lastEps && epsB < lastEps.eps) flagsD.push(`合理 EPS（${epsB.toFixed(2)} 元）< ${lastEps.year} 年 EPS（${lastEps.eps.toFixed(2)} 元）`);
+    if (v.mb < 1.5) flagsD.push(`稅後淨利率偏低（${v.mb.toFixed(1)}% < 1.5%）`);
+    if (FA.divs.lastCash && divB < FA.divs.lastCash) flagsD.push(`預估股利（${divB.toFixed(2)} 元）< ${FA.divs.lastCashYear} 年度發放（${FA.divs.lastCash.toFixed(2)} 元）`);
+  } else {
+    document.getElementById("epsTable").innerHTML = "";
+    document.getElementById("yieldBox").innerHTML = `<div class="warn-box">請先填入營收與發行股數</div>`;
+  }
+  document.getElementById("epsFlags").innerHTML = flagsHtml(flagsD, "獲利衰退警訊", C && v.shares > 0 ? "獲利確認通過：EPS 與股利預估維持成長" : "");
+
+  // STEP 4 產業紅旗
+  const flagsB = [];
+  if (v.cyc.includes("下行")) flagsB.push("產業處於下行週期");
+  if (v.pol.includes("高風險")) flagsB.push("政策/地緣風險高");
+  if (v.mshare.includes("快速流失")) flagsB.push("市占率快速流失");
+  if (v.moat.startsWith("弱")) flagsB.push("護城河薄弱，易被競爭者取代");
+  if (v.rate.includes("升息")) flagsB.push("升息週期，高本益比股估值受壓，需更大安全邊際");
+  document.getElementById("indFlags").innerHTML = flagsHtml(flagsB, "產業紅旗", "產業紅旗確認通過");
+
+  // 投資評分
+  const s = calcInvestScores({
+    B, bigDelta: FA.big.available ? FA.big.deltaBig : null, cyc: v.cyc, moat: v.moat,
+    ttmEps: FA.fin.ttmEps, prevTtmEps: FA.fin.prevTtmEps, completeEps: FA.fin.completeEps,
+    roe: FA.fin.roe, yld, techCount: FA.entry.count,
+  });
+  const paint = (prefix, score) => {
+    const [g, col] = gradeScore(score);
+    document.getElementById(prefix + "Grade").textContent = g;
+    document.getElementById(prefix + "Grade").style.color = col;
+    document.getElementById(prefix + "Num").textContent = `${score} / 100`;
+    document.getElementById(prefix + "Num").style.color = col;
+    document.getElementById(prefix + "Badge").style.borderColor = col;
+    return g;
+  };
+  const stG = paint("st", s.stScore), ltG = paint("lt", s.ltScore);
+  const itemsHtml = items => items.map(([i, d, p]) => `<div class="item-row">${i} ${d} <b>(${p}分)</b></div>`).join("");
+  document.getElementById("stItems").innerHTML = itemsHtml(s.st);
+  document.getElementById("ltItems").innerHTML = itemsHtml(s.lt);
+
+  let text, col;
+  if (s.ltScore >= 70 && s.stScore >= 55) { text = `📈 長短期皆強（長期 ${ltG}／短期 ${stG}）→ 可考慮積極建立部位`; col = "#27ae60"; }
+  else if (s.ltScore >= 70) { text = `📅 長期佳但短期動能不足（長期 ${ltG}／短期 ${stG}）→ 建議長期持有，分批進場`; col = "#2d6abf"; }
+  else if (s.stScore >= 55) { text = `⚡ 短期動能強但長期品質待確認（短期 ${stG}）→ 小部位短線操作`; col = "#e67e22"; }
+  else { text = `⚠️ 長短期評分均偏低（長期 ${ltG}／短期 ${stG}）→ 建議觀望等待訊號改善`; col = "#c02020"; }
+  const box = document.getElementById("verdictBox");
+  box.className = "verdict";
+  box.style.cssText = `background:${col}18;border-color:${col};color:${col}`;
+  box.textContent = text;
+
+  const groups = [["財務", FA.flagsA], ["營收", flagsC], ["獲利", flagsD], ["產業", flagsB], ["籌碼", FA.big.flags || []]]
+    .filter(([, f]) => f.length);
+  document.getElementById("flagSummary").innerHTML = groups.length
+    ? `<div class="warn-box"><b>⚠️ 紅旗 ${sumOf(groups.map(g => g[1].length))} 項</b>（桌面版流程遇到紅旗會要求確認是否繼續）<ul class="flag-list">${groups.map(([n, f]) => `<li><b>${n}：</b>${f.join("；")}</li>`).join("")}</ul></div>`
+    : `<div class="ok-pass">✅ 財務、營收、獲利、產業、籌碼皆無紅旗</div>`;
+}
+
+let recalcPending = false;
+["input", "change"].forEach(type => document.addEventListener(type, e => {
+  if (!e.target.dataset || !e.target.dataset.key || recalcPending) return;
+  recalcPending = true;
+  requestAnimationFrame(() => { recalcPending = false; recalcForecast(); });
+}));
+
 function setStatus(msg, type) {
   const el = document.getElementById("statusMsg");
   const cls = type === "error" ? "not-rec" : type === "ok" ? "ok-pass" : "info-box";
@@ -1078,19 +1787,20 @@ async function runAnalysis() {
 
   try {
     // 若是用代碼查詢（尚未取得名稱），順便並行抓股票清單以補上公司名稱，讓標題一律顯示「名稱（代碼）」
-    const [priceRows, instRows, marginRows, dtRows, fxRows, stockList] = await Promise.all([
+    const [priceRows, instRows, marginRows, dtRows, fxRows, stockList, fundData] = await Promise.all([
       fetchPriceHistory(stockId, 130),
       fetchInstitutional(stockId, 40),
       fetchMargin(stockId, 40),
       fetchDayTrading(stockId, 40),
       fetchExchangeRate(130),
-      stockName ? Promise.resolve(null) : fetchStockList().catch(() => []),
+      fetchStockList().catch(() => []),
+      fetchFundamentals(stockId),
     ]);
 
-    if (!stockName && stockList) {
-      const hit = stockList.find(r => r.stock_id === stockId);
-      if (hit) stockName = hit.stock_name;
-    }
+    // 股票清單一天只抓一次（存在瀏覽器），順便補上公司名稱與產業別
+    const hit = (stockList || []).find(r => r.stock_id === stockId);
+    if (!stockName && hit) stockName = hit.stock_name;
+    const industry = hit ? hit.industry_category : "";
 
     if (priceRows.length < 5) {
       setStatus("查無此股票代碼的價格資料，請確認代碼是否正確（或該股票近期無交易）", "error");
@@ -1111,6 +1821,9 @@ async function runAnalysis() {
     // 圖表（自製 SVG）
     renderPriceChartSVG(priceRows, sname);
     renderMacdEval(macdSig);
+
+    // 基本面、預估、千張大戶、進場時機、投資評分
+    renderFundamentals(stockId, sname, industry, priceRows, fundData, macdSig);
 
     // 籌碼面評分
     const { score, items } = calcChipTechScore(instSig, marginSig, dtSig);
@@ -1164,6 +1877,7 @@ async function runAnalysis() {
     // 手機轉橫／直向時依新寬度重畫圖表
     redrawCharts = () => {
       renderPriceChartSVG(priceRows, sname);
+      renderFundamentalCharts();
       renderFxEval(fx, sname);
       updateWave(priceRows, sname);
     };
