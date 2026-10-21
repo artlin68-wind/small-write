@@ -162,6 +162,16 @@
       <button id="analyzeBtn">開始分析</button>
     </div>
     <div id="statusMsg"></div>
+    <details class="fold" id="aiSettings">
+      <summary>🔑 AI 功能設定（選用：公司簡介、截圖解讀）</summary>
+      <div class="form-grid">
+        <label class="field"><span>Anthropic API Key</span>
+          <input type="password" id="apiKeyInput" autocomplete="off" placeholder="sk-ant-..."></label>
+        <label class="field" style="flex-direction:row;align-items:center;gap:8px">
+          <input type="checkbox" id="apiKeyRemember" style="width:auto"> 記在這台裝置上</label>
+      </div>
+      <p class="caption">Key 只存在你的瀏覽器裡，直接送到 Anthropic，不會經過其他伺服器。沒勾「記在這台裝置上」的話，關掉分頁就會清除。用量計費，到 console.anthropic.com 申請。</p>
+    </details>
   </div>
 
   <div id="resultsArea" class="hidden">
@@ -195,6 +205,13 @@
     <div class="card">
       <h2 id="basicTitle">📋 STEP 1–2｜基本資料</h2>
       <div class="metric-grid" id="basicGrid"></div>
+    </div>
+
+    <div class="card">
+      <h2>🏢 公司在做什麼？技術競爭力</h2>
+      <div id="profileBox"></div>
+      <div class="input-row no-report"><button id="profileBtn" class="secondary">🤖 用 AI 產生公司簡介</button></div>
+      <p class="caption no-report" id="profileNote">由 Claude 上網查證（年報、法說會、官網）後整理，約需 1 分鐘，每次約 0.1–0.3 美元；結果會存在這台裝置上，同一檔下次直接顯示。</p>
     </div>
 
     <div class="card">
@@ -326,7 +343,26 @@
     </div>
 
     <div class="card">
-      <h2>📅 STEP 7｜技術面進場時機（自動判讀）</h2>
+      <h2>📸 STEP 6d｜技術線型截圖 AI 解讀＋交叉比對（選用）</h2>
+      <p class="caption">上傳看盤軟體截圖（K 線、法人買賣超、融資等畫面），AI 只回報畫面上實際看得到的數據，再與上方自動抓取的數據交叉比對。</p>
+      <div class="no-report">
+        <input type="file" id="shotInput" accept="image/*">
+        <img id="shotPreview" class="hidden" alt="截圖預覽" style="max-width:100%;margin-top:10px;border:1px solid #e2e7f2;border-radius:8px">
+        <div class="input-row" style="margin-top:10px"><button id="shotBtn" class="secondary" disabled>🔍 AI 解讀截圖</button></div>
+      </div>
+      <div id="shotResult"></div>
+    </div>
+
+    <div class="card">
+      <h2>📅 STEP 7｜投資策略與技術面進場時機</h2>
+      <div class="form-grid">
+        <label class="field"><span>建議策略（你的判斷）</span><select data-key="strat">
+          <option>📅 長期投資（殖利率佳，護城河強，持有2年以上）</option>
+          <option>⚡ 短期交易（題材驅動，技術面追蹤，嚴格停損）</option>
+          <option>📅+⚡ 核心衛星（60% 長期 + 40% 短期）</option></select></label>
+      </div>
+      <div id="stratNote"></div>
+      <h3>技術面進場判斷（自動）</h3>
       <p class="caption">由股價自動判斷：股價與 MA20（月線）位置、MACD 方向、是否站穩 MA60（季線，作為關鍵支撐參考）。</p>
       <div id="entryBox"></div>
     </div>
@@ -350,6 +386,15 @@
         • <b>估值過高：</b>股價 &gt; 目標價 × 1.3 時縮減部位至 10%
       </div>
     </details>
+
+    <div class="card no-report">
+      <h2>📋 STEP 9｜輸出完整分析報告</h2>
+      <p class="caption">把目前畫面上的所有分析（含圖表、你填的預估數字與判斷）存成一個 HTML 檔，可離線開啟、傳給別人。</p>
+      <div class="input-row">
+        <button id="reportBtn">📥 下載 HTML 報告</button>
+        <button id="shareBtn" class="secondary hidden">📤 分享報告</button>
+      </div>
+    </div>
 
   </div>
 
@@ -1016,9 +1061,15 @@ function renderMacdSVG(full, s, viewN, step, dates) {
   const cw = Math.max(1, step * 0.5);
 
   let svg = `<text x="${PAD.L}" y="14" font-size="11" fill="#555">MACD（DIF橘／DEA藍／柱狀）</text>`;
-  // 零軸
+  // 零軸：0 軸以下的區域淡淡標紅，提醒這一區是空方格局
   const y0 = y(0);
-  svg += `<line x1="${PAD.L}" y1="${y0.toFixed(1)}" x2="${W - PAD.R}" y2="${y0.toFixed(1)}" stroke="#ccc" stroke-dasharray="3 3"/>`;
+  svg += `<rect x="${PAD.L}" y="${y0.toFixed(1)}" width="${W - PAD.L - PAD.R}" height="${Math.max(0, padT + plotH - y0).toFixed(1)}" fill="#c02020" opacity="0.05"/>`;
+  svg += `<line x1="${PAD.L}" y1="${y0.toFixed(1)}" x2="${W - PAD.R}" y2="${y0.toFixed(1)}" stroke="#999" stroke-dasharray="3 3"/>`;
+  svg += `<text x="${PAD.L - 6}" y="${(y0 + 3).toFixed(1)}" font-size="10" fill="#666" text-anchor="end">0 軸</text>`;
+  const difLast = lastOf(dif.filter(v => v != null)), deaLast = lastOf(dea.filter(v => v != null));
+  if (difLast < 0 && deaLast < 0) {
+    svg += `<text x="${W - PAD.R}" y="14" font-size="11" fill="#c02020" text-anchor="end" font-weight="700">⚠ 目前在 0 軸以下</text>`;
+  }
   // 柱狀
   hist.forEach((v, i) => {
     if (v == null) return;
@@ -1307,10 +1358,12 @@ function calcEntrySignals(priceRows, macdSig) {
     else items.push(`⚠️ 跌破 MA20（月線 ${ma20.toFixed(1)}，股價低 ${Math.abs(d).toFixed(1)}%）`);
   }
   if (macdSig) {
-    if (macdSig.cross === "golden") { items.push("✅ MACD 近日黃金交叉"); count++; }
-    else if (macdSig.cross === "dead") items.push("⚠️ MACD 近日死亡交叉");
-    else if (macdSig.difNow > macdSig.deaNow) { items.push("✅ MACD 多方排列（DIF 在 DEA 之上）"); count++; }
-    else items.push("➡️ MACD 空方排列或整理中（DIF 在 DEA 之下）");
+    const below = macdSig.difNow < 0 && macdSig.deaNow < 0;
+    const zeroTag = below ? "（⚠️ 但位於 0 軸以下，屬弱勢反彈，可信度較低）" : "";
+    if (macdSig.cross === "golden") { items.push(`✅ MACD 近日黃金交叉${zeroTag}`); count++; }
+    else if (macdSig.cross === "dead") items.push(`⚠️ MACD 近日死亡交叉${below ? "（且位於 0 軸以下）" : ""}`);
+    else if (macdSig.difNow > macdSig.deaNow) { items.push(`✅ MACD 多方排列（DIF 在 DEA 之上）${zeroTag}`); count++; }
+    else items.push(`➡️ MACD 空方排列或整理中（DIF 在 DEA 之下）${below ? "，且位於 0 軸以下" : ""}`);
   }
   if (ma60) {
     const d = (close - ma60) / ma60 * 100;
@@ -1386,7 +1439,7 @@ function calcInvestScores(c) {
 // ── 基本面畫面 ─────────────────────────────────────────────────
 
 let FA = null;   // 目前這檔股票的基本面資料與使用者輸入
-const JUDGE_KEYS = ["cyc", "moat", "pol", "mshare", "rate", "macro"];
+const JUDGE_KEYS = ["cyc", "moat", "pol", "mshare", "rate", "macro", "strat"];
 
 function metricHtml(label, value, note, noteColor) {
   return `<div class="metric"><div class="m-label">${label}</div><div class="m-value">${value}</div>` +
@@ -1457,7 +1510,8 @@ function renderFundamentals(stockId, sname, industry, priceRows, fundData, macdS
   const big = calcBigHolderSignal(fundData.bigHolders, fundData.foreign);
   const entry = calcEntrySignals(priceRows, macdSig);
   const price = lastOf(priceRows).close;
-  FA = { stockId, sname, price, fin, revenue, divs, big, entry };
+  const macdBelowZero = !!macdSig && macdSig.difNow < 0 && macdSig.deaNow < 0;
+  FA = { stockId, sname, industry, price, fin, revenue, divs, big, entry, macdBelowZero };
 
   // STEP 1–2
   document.getElementById("basicTitle").textContent = `📋 STEP 1–2｜${sname} 基本資料`;
@@ -1609,6 +1663,17 @@ function recalcForecast() {
   if (v.rate.includes("升息")) flagsB.push("升息週期，高本益比股估值受壓，需更大安全邊際");
   document.getElementById("indFlags").innerHTML = flagsHtml(flagsB, "產業紅旗", "產業紅旗確認通過");
 
+  // STEP 7 策略：依選擇提示對應的停損原則
+  const stratTips = {
+    "📅": "長期投資：以基本面停損，EPS 預估下修超過 20% 檢討出場；連續 2 季 EPS 衰退減碼。短線波動不必急著停損。",
+    "⚡": "短期交易：以技術面停損，跌破關鍵支撐（例如 MA60 季線）就出場，不用固定 % 機械停損。",
+    "📅+⚡": "核心衛星：60% 長期部位用基本面停損、40% 短期部位用技術面停損，兩部分分開記帳管理。",
+  };
+  const stratKey = v.strat.startsWith("📅+⚡") ? "📅+⚡" : v.strat.startsWith("⚡") ? "⚡" : "📅";
+  const stratWarn = stratKey !== "📅" && FA.macdBelowZero
+    ? `<br>⚠️ MACD 目前在 0 軸以下，短期部位尤其要等訊號轉強再進場。` : "";
+  document.getElementById("stratNote").innerHTML = `<div class="info-box">📌 ${stratTips[stratKey]}${stratWarn}</div>`;
+
   // 投資評分
   const s = calcInvestScores({
     B, bigDelta: FA.big.available ? FA.big.deltaBig : null, cyc: v.cyc, moat: v.moat,
@@ -1639,12 +1704,473 @@ function recalcForecast() {
   box.style.cssText = `background:${col}18;border-color:${col};color:${col}`;
   box.textContent = text;
 
-  const groups = [["財務", FA.flagsA], ["營收", flagsC], ["獲利", flagsD], ["產業", flagsB], ["籌碼", FA.big.flags || []]]
+  const flagsT = FA.macdBelowZero ? ["MACD 位於 0 軸以下，中期仍屬空方格局"] : [];
+  const groups = [["財務", FA.flagsA], ["營收", flagsC], ["獲利", flagsD], ["產業", flagsB], ["籌碼", FA.big.flags || []], ["技術", flagsT]]
     .filter(([, f]) => f.length);
   document.getElementById("flagSummary").innerHTML = groups.length
     ? `<div class="warn-box"><b>⚠️ 紅旗 ${sumOf(groups.map(g => g[1].length))} 項</b>（桌面版流程遇到紅旗會要求確認是否繼續）<ul class="flag-list">${groups.map(([n, f]) => `<li><b>${n}：</b>${f.join("；")}</li>`).join("")}</ul></div>`
     : `<div class="ok-pass">✅ 財務、營收、獲利、產業、籌碼皆無紅旗</div>`;
 }
+
+// ══════════════════════════════════════════════════════════════
+//  AI 功能（公司簡介、截圖解讀）：用使用者自己的 Anthropic API Key，
+//  在瀏覽器直接呼叫官方 SDK。SDK 只在按下 AI 按鈕時才從 CDN 載入，平常不影響開啟速度。
+// ══════════════════════════════════════════════════════════════
+
+const CLAUDE_MODEL = "claude-opus-5-5";
+const ANTHROPIC_SDK_URL = "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.131.0/+esm";
+const API_KEY_STORE = "anthropic_api_key";
+let anthropicModule = null;
+
+function loadSavedApiKey() {
+  try {
+    const k = localStorage.getItem(API_KEY_STORE) || sessionStorage.getItem(API_KEY_STORE) || "";
+    document.getElementById("apiKeyInput").value = k;
+    document.getElementById("apiKeyRemember").checked = !!localStorage.getItem(API_KEY_STORE);
+  } catch (e) { /* 私密瀏覽時存取不到就算了 */ }
+}
+
+function getApiKey() {
+  const key = document.getElementById("apiKeyInput").value.trim();
+  try {
+    const remember = document.getElementById("apiKeyRemember").checked;
+    localStorage.removeItem(API_KEY_STORE);
+    sessionStorage.removeItem(API_KEY_STORE);
+    if (key) (remember ? localStorage : sessionStorage).setItem(API_KEY_STORE, key);
+  } catch (e) { /* 存不進去不影響本次使用 */ }
+  return key;
+}
+
+function requireApiKey() {
+  const key = getApiKey();
+  if (!key) {
+    const box = document.getElementById("aiSettings");
+    box.open = true;
+    box.scrollIntoView({ behavior: "smooth", block: "center" });
+    document.getElementById("apiKeyInput").focus();
+  }
+  return key;
+}
+
+async function claudeClient(apiKey) {
+  if (!anthropicModule) anthropicModule = await import(ANTHROPIC_SDK_URL);
+  const Anthropic = anthropicModule.default;
+  return { Anthropic, client: new Anthropic({ apiKey, dangerouslyAllowBrowser: true }) };
+}
+
+// 共用請求參數：拒答時由伺服器自動改用其他模型重試（server-side fallback）
+const CLAUDE_BASE = {
+  model: CLAUDE_MODEL,
+  betas: ["server-side-fallback-2026-07-01"],
+  fallbacks: "default",
+};
+
+function claudeErrorText(e, Anthropic) {
+  if (Anthropic && e instanceof Anthropic.AuthenticationError) return "API Key 無效，請確認是否貼錯";
+  if (Anthropic && e instanceof Anthropic.PermissionDeniedError) return "這把 API Key 沒有使用權限";
+  if (Anthropic && e instanceof Anthropic.RateLimitError) return "請求太頻繁或額度不足，請稍後再試";
+  if (Anthropic && e instanceof Anthropic.APIConnectionError) return "連不到 Anthropic，請確認網路";
+  if (Anthropic && e instanceof Anthropic.APIStatusError) return `Anthropic 回應錯誤（${e.status}）：${e.message}`;
+  return e.message || String(e);
+}
+
+// ── 公司簡介 ──────────────────────────────────────────────────
+
+const PROFILE_TOOL = {
+  name: "report_company_profile",
+  description: "回報整理好的公司簡介。查證完成後必須呼叫這個工具一次，把結果填入。",
+  strict: true,
+  input_schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["business_summary", "segments", "key_products", "applications", "tech_strengths", "competitors", "risks", "data_period", "sources"],
+    properties: {
+      business_summary: { type: "string", description: "2-3 句白話說明公司主要做什麼、靠什麼賺錢" },
+      segments: {
+        type: "array",
+        description: "主要營收來源（產品線或應用別）與占營收比重，最多 6 項；查不到比重填 0",
+        items: {
+          type: "object", additionalProperties: false, required: ["name", "share_pct", "note"],
+          properties: { name: { type: "string" }, share_pct: { type: "number" }, note: { type: "string" } },
+        },
+      },
+      key_products: { type: "array", items: { type: "string" }, description: "主要產品，3-6 項" },
+      applications: { type: "array", items: { type: "string" }, description: "產品用在哪些終端應用或客戶群，3-6 項" },
+      tech_strengths: {
+        type: "array",
+        description: "具體的技術競爭力（製程、專利、IP、市占、良率、客戶認證等），3-5 項",
+        items: {
+          type: "object", additionalProperties: false, required: ["title", "detail"],
+          properties: { title: { type: "string" }, detail: { type: "string" } },
+        },
+      },
+      competitors: {
+        type: "array",
+        description: "主要競爭對手，2-5 家",
+        items: {
+          type: "object", additionalProperties: false, required: ["name", "note"],
+          properties: { name: { type: "string" }, note: { type: "string" } },
+        },
+      },
+      risks: { type: "array", items: { type: "string" }, description: "主要風險，2-4 項" },
+      data_period: { type: "string", description: "資料所屬期間，例如「2025 年報、2026Q2 法說會」" },
+      sources: {
+        type: "array",
+        description: "實際引用的來源網址",
+        items: {
+          type: "object", additionalProperties: false, required: ["title", "url"],
+          properties: { title: { type: "string" }, url: { type: "string" } },
+        },
+      },
+    },
+  },
+};
+
+async function fetchCompanyProfile(apiKey, stockId, name, industry) {
+  const { Anthropic, client } = await claudeClient(apiKey);
+  const messages = [{
+    role: "user",
+    content: `請整理台股 ${name}（代號 ${stockId}，產業別：${industry || "未知"}）：主要業務與營收結構、主要產品與應用、具體的技術競爭力、主要競爭對手、主要風險。`,
+  }];
+  try {
+    for (let turn = 0; turn < 6; turn++) {
+      const res = await client.beta.messages.create({
+        ...CLAUDE_BASE,
+        max_tokens: 16000,
+        output_config: { effort: "medium" },
+        system: "你是台股產業研究員，用繁體中文、白話、讓投資新手看得懂的方式說明公司。" +
+          "先用 web_search 查證，優先採用公司官網、年報、法說會簡報、公開資訊觀測站；不要憑記憶編造數字，查不到的比重填 0。" +
+          "整理完成後呼叫 report_company_profile 工具回報。",
+        tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 5 }, PROFILE_TOOL],
+        tool_choice: { type: "auto" },
+        messages,
+      });
+      if (res.stop_reason === "refusal") throw new Error("AI 拒絕處理這個請求");
+      const call = res.content.find(b => b.type === "tool_use" && b.name === PROFILE_TOOL.name);
+      if (call) return call.input;
+      if (res.stop_reason === "max_tokens") throw new Error("AI 回覆過長被截斷，請再試一次");
+      messages.push({ role: "assistant", content: res.content });
+      // pause_turn：伺服器端搜尋還沒做完，原樣送回讓它接著做
+      if (res.stop_reason !== "pause_turn") {
+        messages.push({ role: "user", content: "請呼叫 report_company_profile 工具回報整理好的結果。" });
+      }
+    }
+    throw new Error("AI 沒有回報結果，請再試一次");
+  } catch (e) {
+    throw new Error(claudeErrorText(e, Anthropic));
+  }
+}
+
+const PROFILE_COLORS = ["#2d6abf", "#27ae60", "#e67e22", "#7c3aed", "#0891b2", "#c02020", "#92400e"];
+const safeUrl = u => /^https?:\/\//i.test(u) ? u : null;
+
+function renderProfile(profile, savedAt) {
+  const box = document.getElementById("profileBox");
+  if (!profile) {
+    box.innerHTML = `<div class="info-box">產業別：<b>${esc((FA && FA.industry) || "N/A")}</b>。按下方按鈕讓 AI 查證後整理公司在做什麼、技術競爭力在哪裡。` +
+      (FA ? `　<a href="https://tw.stock.yahoo.com/quote/${esc(FA.stockId)}/profile" target="_blank" rel="noopener">Yahoo 股市公司資料 ↗</a>` : "") + `</div>`;
+    return;
+  }
+  const segs = profile.segments.filter(s => s.share_pct > 0);
+  const total = sumOf(segs.map(s => s.share_pct));
+  let chart = "";
+  if (segs.length && total > 0) {
+    // 一張圖看營收結構：100% 堆疊長條＋圖例
+    let x = 0;
+    const bar = segs.map((s, i) => {
+      const w = s.share_pct / Math.max(total, 100) * 100;
+      const seg = `<rect x="${x.toFixed(2)}%" y="0" width="${w.toFixed(2)}%" height="28" fill="${PROFILE_COLORS[i % PROFILE_COLORS.length]}"/>`;
+      x += w;
+      return seg;
+    }).join("");
+    const legend = segs.map((s, i) =>
+      `<div class="item-row"><span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:${PROFILE_COLORS[i % PROFILE_COLORS.length]};margin-right:6px"></span><b>${esc(s.name)}</b> ${s.share_pct.toFixed(0)}%${s.note ? `　<span style="color:#666">${esc(s.note)}</span>` : ""}</div>`).join("");
+    chart = `<h3>營收結構</h3><svg width="100%" height="28" style="display:block;border-radius:6px;background:#eef1f6">${bar}</svg>${legend}`;
+  } else if (profile.segments.length) {
+    chart = `<h3>營收來源</h3>` + profile.segments.map(s => `<div class="item-row">• <b>${esc(s.name)}</b>${s.note ? "：" + esc(s.note) : ""}</div>`).join("");
+  }
+  const chips = arr => arr.map(t => `<span style="display:inline-block;background:#eef3ff;border:1px solid #d5dff2;border-radius:14px;padding:3px 10px;margin:3px 4px 3px 0;font-size:13px">${esc(t)}</span>`).join("");
+  const sources = profile.sources.filter(s => safeUrl(s.url)).slice(0, 8)
+    .map(s => `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title || s.url)}</a>`).join("　");
+  box.innerHTML =
+    `<div class="info-box" style="font-size:14.5px">${esc(profile.business_summary)}</div>` +
+    chart +
+    `<h3>主要產品</h3><div>${chips(profile.key_products)}</div>` +
+    `<h3>應用領域／客戶</h3><div>${chips(profile.applications)}</div>` +
+    `<h3>🛡️ 技術競爭力</h3>` +
+    profile.tech_strengths.map(t => `<div class="chip-box"><b>${esc(t.title)}</b><br>${esc(t.detail)}</div>`).join("") +
+    `<h3>主要競爭對手</h3>` + profile.competitors.map(c => `<div class="item-row">• <b>${esc(c.name)}</b>${c.note ? "：" + esc(c.note) : ""}</div>`).join("") +
+    `<h3>主要風險</h3>` + profile.risks.map(r => `<div class="item-row">⚠️ ${esc(r)}</div>`).join("") +
+    `<p class="caption">資料期間：${esc(profile.data_period)}｜AI 整理於 ${esc(savedAt)}，僅供參考，請以公司公告為準。${sources ? "<br>來源：" + sources : ""}</p>`;
+}
+
+function showSavedProfile() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(`profile_v1_${FA.stockId}`) || "null"); } catch (e) { /* 忽略 */ }
+  renderProfile(saved ? saved.data : null, saved ? saved.at : "");
+  document.getElementById("profileBtn").textContent = saved ? "🔄 重新產生公司簡介" : "🤖 用 AI 產生公司簡介";
+}
+
+async function onProfileClick() {
+  if (!FA) return;
+  const apiKey = requireApiKey();
+  if (!apiKey) return;
+  const btn = document.getElementById("profileBtn");
+  const { stockId, sname, industry } = FA;
+  btn.disabled = true;
+  document.getElementById("profileBox").innerHTML = `<div class="info-box"><span class="spinner"></span>AI 正在上網查證並整理 ${esc(sname)} 的資料，約需 1 分鐘…</div>`;
+  try {
+    const data = await fetchCompanyProfile(apiKey, stockId, sname.replace(/（.*）$/, ""), industry);
+    const at = new Date().toLocaleDateString("zh-TW");
+    try { localStorage.setItem(`profile_v1_${stockId}`, JSON.stringify({ at, data })); } catch (e) { /* 存不進去仍顯示 */ }
+    if (FA && FA.stockId === stockId) { renderProfile(data, at); btn.textContent = "🔄 重新產生公司簡介"; }
+  } catch (e) {
+    document.getElementById("profileBox").innerHTML = `<div class="not-rec">⚠️ 公司簡介產生失敗：${esc(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── STEP 6d 截圖解讀 ──────────────────────────────────────────
+
+const NOT_SHOWN = "未顯示";
+const SHOT_FIELDS = {
+  chart_type: "這張截圖是什麼類型的畫面（K線圖／法人買賣超／融資融券／當沖統計／其他）",
+  stock_name_or_id: "畫面上顯示的股票代碼或名稱",
+  date_or_range: "畫面上顯示的日期或期間",
+  ma_alignment: "均線排列（多頭排列／空頭排列／糾結不明），需依畫面上實際均線判斷",
+  macd_position: "MACD 位置（0 軸以上／0 軸以下／交叉中），以及黃金或死亡交叉",
+  candlestick_pattern: "畫面上可辨識的 K 線型態描述",
+  volume_signal: "成交量與價格的關係（量增價漲／量縮價跌／背離）",
+  institutional_net: "畫面上顯示的法人買賣超數字或文字",
+  trust_net: "畫面上顯示的投信買賣超或投信庫存數字",
+  margin_change: "畫面上顯示的融資增減資訊",
+  day_trading_ratio: "畫面上顯示的當沖比例或當沖量",
+  signal_basis: "方向判斷是根據畫面上哪些具體數據",
+  confidence_note: "誠實說明判讀的把握程度，資訊不足要明確說明",
+};
+const SHOT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: [...Object.keys(SHOT_FIELDS), "overall_signal"],
+  properties: {
+    ...Object.fromEntries(Object.entries(SHOT_FIELDS).map(([k, d]) => [k, { type: "string", description: d }])),
+    overall_signal: { type: "string", enum: ["偏多", "中性", "偏空", "無法判斷"] },
+  },
+};
+const SHOT_LABELS = {
+  chart_type: "畫面類型", stock_name_or_id: "股票", date_or_range: "日期／期間", ma_alignment: "均線排列",
+  macd_position: "MACD", candlestick_pattern: "K 線型態", volume_signal: "量價關係", institutional_net: "法人買賣超",
+  trust_net: "投信", margin_change: "融資", day_trading_ratio: "當沖",
+};
+
+// iPhone 照片動輒數 MB：先縮到長邊 1568px 再轉 JPEG，省流量也省 token
+function imageToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, 1568 / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/jpeg", 0.88).split(",")[1]);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("無法讀取這張圖片")); };
+    img.src = url;
+  });
+}
+
+async function analyzeScreenshot(apiKey, file) {
+  const data = await imageToBase64(file);
+  const { Anthropic, client } = await claudeClient(apiKey);
+  try {
+    const res = await client.beta.messages.create({
+      ...CLAUDE_BASE,
+      max_tokens: 4000,
+      output_config: { effort: "medium", format: { type: "json_schema", schema: SHOT_SCHEMA } },
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: "image/jpeg", data } },
+          { type: "text", text: `你是嚴謹的台股技術分析助手。只根據這張截圖「畫面上實際顯示」的文字與圖形判讀，不要臆測或編造畫面沒有的資訊；某個欄位畫面沒有顯示就填「${NOT_SHOWN}」。用繁體中文回答。` },
+        ],
+      }],
+    });
+    if (res.stop_reason === "refusal") throw new Error("AI 拒絕處理這張圖片");
+    const text = res.content.find(b => b.type === "text");
+    if (!text) throw new Error("AI 沒有回傳結果，請再試一次");
+    return JSON.parse(text.text);
+  } catch (e) {
+    throw new Error(claudeErrorText(e, Anthropic));
+  }
+}
+
+function crossCheckShot(ext) {
+  const notes = [];
+  const shown = v => typeof v === "string" && v && !v.includes(NOT_SHOWN);
+  const has = (v, ...kws) => kws.some(k => v.includes(k));
+
+  const idMatch = shown(ext.stock_name_or_id) && ext.stock_name_or_id.match(/\d{4,6}/);
+  if (idMatch && idMatch[0] !== FA.stockId) {
+    notes.push(`⚠️ 截圖的股票（${ext.stock_name_or_id}）跟目前分析的 ${FA.sname} 不同，下面的比對可能沒有意義`);
+  }
+
+  const inst = FA.instSig;
+  if (inst && shown(ext.trust_net)) {
+    const autoBuy = inst.trustNet5 > 0;
+    const shotBuy = has(ext.trust_net, "買超", "買進", "增"), shotSell = has(ext.trust_net, "賣超", "賣出", "減");
+    const autoTxt = `自動數據近 5 日淨${autoBuy ? "買" : "賣"} ${lotStr(Math.abs(inst.trustNet5))} 張`;
+    if ((shotBuy && autoBuy) || (shotSell && !autoBuy)) notes.push(`✅ 投信方向一致：截圖「${ext.trust_net}」，${autoTxt}`);
+    else if (shotBuy || shotSell) notes.push(`⚠️ 投信方向可能不一致：截圖「${ext.trust_net}」，${autoTxt}——請確認兩者時間區間是否相同`);
+  }
+
+  const mg = FA.marginSig;
+  if (mg && mg.marginChgPct !== null && shown(ext.margin_change)) {
+    const autoUp = mg.marginChgPct > 0;
+    const shotUp = has(ext.margin_change, "增", "上升"), shotDown = has(ext.margin_change, "減", "下降");
+    const autoTxt = `自動數據 5 日變化 ${signed(mg.marginChgPct, 1)}%`;
+    if ((shotUp && autoUp) || (shotDown && !autoUp)) notes.push(`✅ 融資方向一致：截圖「${ext.margin_change}」，${autoTxt}`);
+    else if (shotUp || shotDown) notes.push(`⚠️ 融資方向可能不一致：截圖「${ext.margin_change}」，${autoTxt}——請確認兩者時間區間是否相同`);
+  }
+
+  // 均線排列：用 MA5／MA10／MA20 最新值判斷
+  const closes = FA.priceRows.map(r => r.close);
+  const m5 = lastOf(movingAverage(closes, 5)), m10 = lastOf(movingAverage(closes, 10)), m20 = lastOf(movingAverage(closes, 20));
+  if (m5 && m10 && m20 && shown(ext.ma_alignment)) {
+    const auto = m5 > m10 && m10 > m20 ? "多頭" : m5 < m10 && m10 < m20 ? "空頭" : "糾結";
+    const shot = has(ext.ma_alignment, "多頭") ? "多頭" : has(ext.ma_alignment, "空頭") ? "空頭" : "糾結";
+    notes.push(`${auto === shot ? "✅" : "⚠️"} 均線排列${auto === shot ? "一致" : "不一致"}：截圖「${ext.ma_alignment}」，自動計算為${auto}排列（MA5 ${m5.toFixed(1)}／MA10 ${m10.toFixed(1)}／MA20 ${m20.toFixed(1)}）`);
+  }
+
+  // MACD 0 軸位置
+  if (shown(ext.macd_position) && FA.macdSig) {
+    const autoBelow = FA.macdBelowZero;
+    const shotBelow = has(ext.macd_position, "以下", "之下"), shotAbove = has(ext.macd_position, "以上", "之上");
+    if (shotBelow || shotAbove) {
+      const same = shotBelow === autoBelow;
+      notes.push(`${same ? "✅" : "⚠️"} MACD 位置${same ? "一致" : "不一致"}：截圖「${ext.macd_position}」，自動計算 DIF ${FA.macdSig.difNow.toFixed(2)}（${autoBelow ? "0 軸以下" : "0 軸以上或附近"}）`);
+    }
+  }
+
+  if (!notes.length) notes.push("ℹ️ 截圖沒有可與自動數據直接比對的法人／融資／均線資訊，僅作圖形輔助參考，評分仍以上方量化數據為準");
+  return notes;
+}
+
+function renderShotResult(ext) {
+  const rows = Object.entries(SHOT_LABELS).filter(([k]) => ext[k] && !ext[k].includes(NOT_SHOWN))
+    .map(([k, label]) => `<tr><td>${label}</td><td style="text-align:left">${esc(ext[k])}</td></tr>`).join("");
+  const sigColor = { "偏多": "#c02020", "偏空": "#27ae60", "中性": "#e67e22" }[ext.overall_signal] || "#888";
+  document.getElementById("shotResult").innerHTML =
+    `<h3>AI 從截圖辨識到的數據</h3>` +
+    (rows ? `<div class="table-wrap"><table class="data-table">${rows}</table></div>` : `<div class="info-box">畫面上沒有可辨識的數據</div>`) +
+    `<div class="chip-box">AI 判讀：<b style="color:${sigColor}">${esc(ext.overall_signal)}</b>　依據：${esc(ext.signal_basis)}<br><span style="color:#666">把握程度：${esc(ext.confidence_note)}</span></div>` +
+    `<h3>🔄 與自動抓取數據交叉比對</h3>` +
+    crossCheckShot(ext).map(n => `<div class="item-row">${esc(n)}</div>`).join("");
+}
+
+async function onShotClick() {
+  const file = document.getElementById("shotInput").files[0];
+  if (!FA || !file) return;
+  const apiKey = requireApiKey();
+  if (!apiKey) return;
+  const btn = document.getElementById("shotBtn");
+  btn.disabled = true;
+  document.getElementById("shotResult").innerHTML = `<div class="info-box"><span class="spinner"></span>AI 正在解讀截圖…</div>`;
+  try {
+    renderShotResult(await analyzeScreenshot(apiKey, file));
+  } catch (e) {
+    document.getElementById("shotResult").innerHTML = `<div class="not-rec">⚠️ 解讀失敗：${esc(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── STEP 9 報告輸出：直接複製畫面上的分析結果（含圖表），輸入框改成純文字 ──
+
+function buildReportHtml() {
+  const live = document.getElementById("resultsArea");
+  const area = live.cloneNode(true);
+  area.querySelectorAll("[data-key]").forEach(el => {
+    const src = live.querySelector(`[data-key="${el.dataset.key}"]`);
+    const b = document.createElement("b");
+    b.textContent = src ? src.value : "";
+    el.replaceWith(b);
+  });
+  area.querySelectorAll(".no-report, button, input, .slider-row, .hint").forEach(el => el.remove());
+  area.querySelectorAll("details").forEach(d => d.setAttribute("open", ""));
+  area.querySelectorAll("[id]").forEach(el => el.removeAttribute("id"));
+  const css = document.querySelector("style").textContent;
+  const now = new Date().toLocaleString("zh-TW", { hour12: false });
+  return `<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${esc(FA.sname)} 投資分析報告</title>
+<style>${css}</style>
+</head>
+<body>
+<div class="wrap">
+<div class="title-banner">
+  <h1>📊 ${esc(FA.sname)} 投資分析報告</h1>
+  <p>產生時間：${esc(now)}｜股價 ${FA.price} 元（${esc(lastOf(FA.priceRows).date)}）｜投資預算：100 萬台幣</p>
+</div>
+${area.innerHTML}
+<footer>⚠️ 本報告由「台股投資分析工具」自動產生，僅供參考，不構成投資建議。投資有風險，請依個人財務狀況與風險承受度謹慎判斷。<br>
+資料來源：FinMind（彙整自台灣證交所／櫃買中心）、集保結算所。</footer>
+</div>
+</body>
+</html>`;
+}
+
+function reportFileName() {
+  const d = new Date();
+  const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+  return `${FA.stockId}_${FA.sname.replace(/（.*）$/, "")}_${ymd}_投資分析報告.html`;
+}
+
+function downloadReport() {
+  if (!FA) return;
+  const blob = new Blob([buildReportHtml()], { type: "text/html;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = reportFileName();
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+
+async function shareReport() {
+  if (!FA) return;
+  const file = new File([buildReportHtml()], reportFileName(), { type: "text/html" });
+  try {
+    await navigator.share({ files: [file], title: `${FA.sname} 投資分析報告` });
+  } catch (e) {
+    if (e.name !== "AbortError") downloadReport();   // 使用者取消分享就不處理
+  }
+}
+
+document.getElementById("profileBtn").addEventListener("click", onProfileClick);
+document.getElementById("shotBtn").addEventListener("click", onShotClick);
+document.getElementById("reportBtn").addEventListener("click", downloadReport);
+document.getElementById("shareBtn").addEventListener("click", shareReport);
+document.getElementById("shotInput").addEventListener("change", e => {
+  const file = e.target.files[0];
+  const img = document.getElementById("shotPreview");
+  document.getElementById("shotBtn").disabled = !file;
+  if (file) { img.src = URL.createObjectURL(file); img.classList.remove("hidden"); }
+  else img.classList.add("hidden");
+});
+try {
+  if (navigator.canShare && navigator.canShare({ files: [new File(["x"], "x.html", { type: "text/html" })] })) {
+    document.getElementById("shareBtn").classList.remove("hidden");
+  }
+} catch (e) { /* 不支援分享就只留下載 */ }
+loadSavedApiKey();
 
 let recalcPending = false;
 ["input", "change"].forEach(type => document.addEventListener(type, e => {
@@ -1685,14 +2211,29 @@ function renderMacdEval(macdSig) {
     : "➡️ 近日無明顯交叉");
   bullets.push(aboveZero ? "✅ DIF、DEA 皆在零軸之上，中期趨勢偏多"
     : belowZero ? "🔴 DIF、DEA 皆在零軸之下，中期趨勢偏空"
-    : "⚠️ DIF/DEA 貼近零軸，方向未明");
+    : "⚠️ DIF、DEA 分處 0 軸兩側，趨勢正在轉換");
   bullets.push(momentumUp ? "✅ 柱狀圖較前一日增長，短線動能轉強" : "⚠️ 柱狀圖較前一日縮短，短線動能轉弱");
   bullets.push(`目前 DIF=${difNow.toFixed(2)}、DEA=${deaNow.toFixed(2)}、柱狀=${histNow.toFixed(2)}`);
 
   sigEl.textContent = label;
   sigEl.style.color = color;
   badge.style.borderColor = color;
-  listEl.innerHTML = bullets.map(b => `<div class="item-row">${b}</div>`).join("");
+  listEl.innerHTML = bullets.map(b => `<div class="item-row">${b}</div>`).join("") + macdZeroNoteHtml(macdSig);
+}
+
+// MACD 在 0 軸以下代表中期仍是空方格局：這時的黃金交叉多半只是反彈，要特別提醒
+function macdZeroNoteHtml(macdSig) {
+  if (!macdSig) return "";
+  const { difNow, deaNow, cross } = macdSig;
+  if (difNow < 0 && deaNow < 0) {
+    return `<div class="not-rec">⚠️ <b>MACD 位於 0 軸以下</b>（DIF ${difNow.toFixed(2)}、DEA ${deaNow.toFixed(2)}）：中期仍屬空方格局。` +
+      (cross === "golden" ? "近日的黃金交叉發生在 0 軸以下，多半只是弱勢反彈，可信度較低；" : "") +
+      "建議等 DIF 重新站上 0 軸再確認轉多，不宜重押。</div>";
+  }
+  if (difNow < 0) {
+    return `<div class="warn-box">⚠️ <b>DIF 已跌破 0 軸</b>（${difNow.toFixed(2)}），DEA 仍在 0 軸之上：多方動能明顯轉弱，留意是否一起跌破。</div>`;
+  }
+  return "";
 }
 
 function renderInstBreakdown(bd, dtSig) {
@@ -1824,6 +2365,9 @@ async function runAnalysis() {
 
     // 基本面、預估、千張大戶、進場時機、投資評分
     renderFundamentals(stockId, sname, industry, priceRows, fundData, macdSig);
+    Object.assign(FA, { instSig, marginSig, dtSig, priceRows, macdSig });
+    showSavedProfile();
+    document.getElementById("shotResult").innerHTML = "";
 
     // 籌碼面評分
     const { score, items } = calcChipTechScore(instSig, marginSig, dtSig);
