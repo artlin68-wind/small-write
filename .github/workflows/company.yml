@@ -1,0 +1,53 @@
+name: 更新公司基本資料（主要經營業務）
+
+on:
+  schedule:
+    # 每週日 02:00 UTC（台灣時間 10:00）；每次補最多 500 家，約一季全部輪過一次
+    - cron: "0 2 * * 0"
+  workflow_dispatch:
+    inputs:
+      ids:
+        description: "要立刻重抓的股票代號（空白分隔，例如 2379 2330），留空則照排程補舊資料"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: company
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 抓公司基本資料
+        env:
+          IDS: ${{ github.event.inputs.ids }}
+        run: |
+          if [ -n "$IDS" ]; then
+            python scripts/fetch_company.py ids $IDS
+          else
+            python scripts/fetch_company.py update
+          fi
+
+      - name: Commit 資料
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add data/company
+          if git diff --cached --quiet; then
+            echo "資料沒有變化"
+          else
+            git commit -m "Update company profile data"
+            git pull --rebase
+            git push
+          fi

@@ -209,9 +209,10 @@
 
     <div class="card">
       <h2>🏢 公司在做什麼？技術競爭力</h2>
+      <div id="officialBox"></div>
       <div id="profileBox"></div>
       <div class="input-row no-report"><button id="profileBtn" class="secondary">🤖 用 AI 產生公司簡介</button></div>
-      <p class="caption no-report" id="profileNote">由 Claude 上網查證（年報、法說會、官網）後整理，約需 1 分鐘，每次約 0.1–0.3 美元；結果會存在這台裝置上，同一檔下次直接顯示。</p>
+      <p class="caption no-report" id="profileNote">上方官方資料免費、自動顯示；AI 簡介（營收結構、技術競爭力、對手、風險）由 Claude 參考官方資料並上網查證（年報、法說會、官網）後整理，約需 1 分鐘，每次約 0.1–0.3 美元；結果會存在這台裝置上，同一檔下次直接顯示。</p>
     </div>
 
     <div class="card">
@@ -1181,6 +1182,16 @@ async function fetchBigHolders(stockId) {
   }
 }
 
+async function fetchOfficialProfile(stockId) {
+  // 公開資訊觀測站「公司基本資料」，由 GitHub Actions 定期抓（scripts/fetch_company.py），與網頁同網域
+  try {
+    const res = await fetch(`data/company/${stockId}.json`, { cache: "no-cache" });
+    return res.ok ? await res.json() : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 async function fetchFundamentals(stockId) {
   const cy = new Date().getFullYear();
   // 基本面任何一項抓不到都不該讓整個分析失敗
@@ -1826,11 +1837,16 @@ const PROFILE_TOOL = {
   },
 };
 
-async function fetchCompanyProfile(apiKey, stockId, name, industry) {
+async function fetchCompanyProfile(apiKey, stockId, name, industry, official) {
   const { Anthropic, client } = await claudeClient(apiKey);
+  const facts = official && official.mainBusiness
+    ? `\n\n公開資訊觀測站登記資料（官方，可直接採用，不必再查）：\n公司全名：${official.name}\n產業別：${official.industry}\n` +
+      `主要經營業務：${official.mainBusiness}\n官網：${official.website || "無"}\n\n` +
+      "請把搜尋次數用在官方資料沒有的部分：最新營收結構比重、技術競爭力、競爭對手、風險。"
+    : "";
   const messages = [{
     role: "user",
-    content: `請整理台股 ${name}（代號 ${stockId}，產業別：${industry || "未知"}）：主要業務與營收結構、主要產品與應用、具體的技術競爭力、主要競爭對手、主要風險。`,
+    content: `請整理台股 ${name}（代號 ${stockId}，產業別：${industry || "未知"}）：主要業務與營收結構、主要產品與應用、具體的技術競爭力、主要競爭對手、主要風險。${facts}`,
   }];
   try {
     for (let turn = 0; turn < 6; turn++) {
@@ -1867,7 +1883,7 @@ const safeUrl = u => /^https?:\/\//i.test(u) ? u : null;
 function renderProfile(profile, savedAt) {
   const box = document.getElementById("profileBox");
   if (!profile) {
-    box.innerHTML = `<div class="info-box">產業別：<b>${esc((FA && FA.industry) || "N/A")}</b>。按下方按鈕讓 AI 查證後整理公司在做什麼、技術競爭力在哪裡。` +
+    box.innerHTML = `<div class="info-box">${FA && FA.official ? "" : `產業別：<b>${esc((FA && FA.industry) || "N/A")}</b>。`}按下方按鈕讓 AI 查證後整理營收結構、技術競爭力、競爭對手與風險。` +
       (FA ? `　<a href="https://tw.stock.yahoo.com/quote/${esc(FA.stockId)}/profile" target="_blank" rel="noopener">Yahoo 股市公司資料 ↗</a>` : "") + `</div>`;
     return;
   }
@@ -1904,6 +1920,24 @@ function renderProfile(profile, savedAt) {
     `<p class="caption">資料期間：${esc(profile.data_period)}｜AI 整理於 ${esc(savedAt)}，僅供參考，請以公司公告為準。${sources ? "<br>來源：" + sources : ""}</p>`;
 }
 
+function renderOfficialProfile(o) {
+  const box = document.getElementById("officialBox");
+  if (!o || !o.mainBusiness) { box.innerHTML = ""; return; }
+  const capYi = parseFloat(String(o.capital).replace(/[^\d.]/g, "")) / 1e8;
+  const facts = [
+    ["產業別", o.industry], ["市場", o.market], ["董事長", o.chairman], ["總經理", o.president],
+    ["成立", o.established && o.established.slice(0, 4)], ["上市櫃", o.listed && o.listed.slice(0, 4)],
+    ["資本額", capYi > 0 ? `${fmtYi(capYi)} 億` : ""],
+  ].filter(([, v]) => v);
+  const site = safeUrl(o.website) || (o.website ? `https://${o.website}` : "");
+  box.innerHTML =
+    `<h3>📄 官方登記的主要經營業務</h3>` +
+    `<div class="info-box" style="font-size:14.5px">${esc(o.mainBusiness)}</div>` +
+    `<div style="margin:6px 0">${facts.map(([k, v]) => `<span style="display:inline-block;margin:2px 14px 2px 0;font-size:13.5px"><span style="color:#666">${k}</span> <b>${esc(v)}</b></span>`).join("")}</div>` +
+    `<p class="caption">來源：公開資訊觀測站公司基本資料（${esc(o.updated)} 取得）` +
+    (site ? `｜<a href="${esc(site)}" target="_blank" rel="noopener">公司官網 ↗</a>` : "") + `</p>`;
+}
+
 function showSavedProfile() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(`profile_v1_${FA.stockId}`) || "null"); } catch (e) { /* 忽略 */ }
@@ -1916,11 +1950,11 @@ async function onProfileClick() {
   const apiKey = requireApiKey();
   if (!apiKey) return;
   const btn = document.getElementById("profileBtn");
-  const { stockId, sname, industry } = FA;
+  const { stockId, sname, industry, official } = FA;
   btn.disabled = true;
   document.getElementById("profileBox").innerHTML = `<div class="info-box"><span class="spinner"></span>AI 正在上網查證並整理 ${esc(sname)} 的資料，約需 1 分鐘…</div>`;
   try {
-    const data = await fetchCompanyProfile(apiKey, stockId, sname.replace(/（.*）$/, ""), industry);
+    const data = await fetchCompanyProfile(apiKey, stockId, sname.replace(/（.*）$/, ""), industry, official);
     const at = new Date().toLocaleDateString("zh-TW");
     try { localStorage.setItem(`profile_v1_${stockId}`, JSON.stringify({ at, data })); } catch (e) { /* 存不進去仍顯示 */ }
     if (FA && FA.stockId === stockId) { renderProfile(data, at); btn.textContent = "🔄 重新產生公司簡介"; }
@@ -2328,7 +2362,7 @@ async function runAnalysis() {
 
   try {
     // 若是用代碼查詢（尚未取得名稱），順便並行抓股票清單以補上公司名稱，讓標題一律顯示「名稱（代碼）」
-    const [priceRows, instRows, marginRows, dtRows, fxRows, stockList, fundData] = await Promise.all([
+    const [priceRows, instRows, marginRows, dtRows, fxRows, stockList, fundData, official] = await Promise.all([
       fetchPriceHistory(stockId, 130),
       fetchInstitutional(stockId, 40),
       fetchMargin(stockId, 40),
@@ -2336,6 +2370,7 @@ async function runAnalysis() {
       fetchExchangeRate(130),
       fetchStockList().catch(() => []),
       fetchFundamentals(stockId),
+      fetchOfficialProfile(stockId),
     ]);
 
     // 股票清單一天只抓一次（存在瀏覽器），順便補上公司名稱與產業別
@@ -2365,7 +2400,8 @@ async function runAnalysis() {
 
     // 基本面、預估、千張大戶、進場時機、投資評分
     renderFundamentals(stockId, sname, industry, priceRows, fundData, macdSig);
-    Object.assign(FA, { instSig, marginSig, dtSig, priceRows, macdSig });
+    Object.assign(FA, { instSig, marginSig, dtSig, priceRows, macdSig, official });
+    renderOfficialProfile(official);
     showSavedProfile();
     document.getElementById("shotResult").innerHTML = "";
 
