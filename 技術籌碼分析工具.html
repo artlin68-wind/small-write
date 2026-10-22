@@ -5,53 +5,57 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="台股分析">
-<meta name="theme-color" content="#1a3a6b">
+<meta name="theme-color" content="#0f141c">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>台股投資分析工具</title>
 <style>
   * { box-sizing: border-box; }
+  :root { color-scheme: dark; }
+  a { color: #7fb0ff; }
   body {
     font-family: "Microsoft JhengHei", "PingFang TC", Arial, sans-serif;
-    background: #f5f7fb;
-    color: #333;
+    background: #0f141c;
+    color: #dfe5ee;
     margin: 0;
     padding: 0;
   }
   .wrap { max-width: 980px; margin: 0 auto; padding: 20px 16px 60px; }
   .title-banner {
-    background: linear-gradient(135deg,#1a3a6b,#2d6abf);
+    background: linear-gradient(135deg,#16305a,#24569e);
     color: white; padding: 22px 26px; border-radius: 12px; margin-bottom: 18px;
   }
   .title-banner h1 { margin: 0; font-size: 22px; }
   .title-banner p { margin: 6px 0 0; font-size: 13px; color: rgba(255,255,255,.85); }
 
   .card {
-    background: white; border: 1px solid #dde2f0; border-radius: 10px;
-    padding: 18px 20px; margin: 16px 0; box-shadow: 0 1px 4px rgba(0,0,0,.05);
+    background: #18202b; border: 1px solid #2a3442; border-radius: 10px;
+    padding: 18px 20px; margin: 16px 0; box-shadow: 0 1px 4px rgba(0,0,0,.4);
   }
-  .card h2 { margin: 0 0 12px; font-size: 17px; color: #1a3a6b; border-bottom: 2px solid #2d6abf; padding-bottom: 6px; }
-  .card h3 { margin: 14px 0 8px; font-size: 14px; color: #333; }
-  .caption { font-size: 12px; color: #888; margin: 4px 0 10px; }
+  .card h2 { margin: 0 0 12px; font-size: 17px; color: #8fb4ff; border-bottom: 2px solid #2d6abf; padding-bottom: 6px; }
+  .card h3 { margin: 14px 0 8px; font-size: 14px; color: #dfe5ee; }
+  .caption { font-size: 12px; color: #8d98aa; margin: 4px 0 10px; }
 
   .input-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
   input[type=text], input[type=password] {
-    border: 1px solid #ccd3e0; border-radius: 8px; padding: 10px 12px; font-size: 14px;
+    border: 1px solid #3a4658; border-radius: 8px; padding: 10px 12px; font-size: 14px;
+    background: #0f141c; color: #dfe5ee;
     flex: 1; min-width: 160px;
   }
   button {
     background: #2d6abf; color: white; border: none; border-radius: 8px;
     padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer;
   }
-  button:hover { background: #1a3a6b; }
-  button:disabled { background: #aab4c8; cursor: not-allowed; }
+  button:hover { background: #3b7ddb; }
+  button:disabled { background: #3a4658; color: #8d98aa; cursor: not-allowed; }
   button.secondary { background: #7c3aed; }
-  button.secondary:hover { background: #5b21b6; }
+  button.secondary:hover { background: #8b5cf6; }
 
   .score-card { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
   .score-badge {
     min-width: 150px; text-align: center; border-radius: 12px; padding: 18px;
-    border: 2px solid #ccc; background: white;
+    border: 2px solid #3a4658; background: #121922;
   }
-  .score-badge .label { font-size: 12px; color: #555; font-weight: 600; }
+  .score-badge .label { font-size: 12px; color: #b3bccb; font-weight: 600; }
   .score-badge .grade { font-size: 42px; font-weight: 800; line-height: 1.1; }
   .score-badge .num { font-size: 20px; font-weight: 700; }
 
@@ -59,21 +63,21 @@
   .item-row { font-size: 13.5px; margin: 6px 0; }
   .item-row b { font-weight: 700; }
 
-  .ok-pass { background:#e8f5e9; border:2px solid #27ae60; color:#155724; padding:12px 14px; border-radius:8px; margin:10px 0; }
-  .not-rec { background:#fde8e8; border:2px solid #c02020; color:#c02020; padding:12px 14px; border-radius:8px; margin:10px 0; }
-  .info-box { background:#eef3ff; border:1.5px solid #2d6abf; padding:12px 14px; border-radius:8px; margin:10px 0; }
-  .chip-box { background:#f5f0ff; border:1.5px solid #7c3aed; padding:12px 14px; border-radius:8px; margin:10px 0; }
-  .warn-box { background:#fff8f0; border:1.5px solid #e67e22; padding:12px 14px; border-radius:8px; margin:10px 0; }
+  .ok-pass { background:#12301f; border:2px solid #3ecf74; color:#9be8b7; padding:12px 14px; border-radius:8px; margin:10px 0; }
+  .not-rec { background:#3a1717; border:2px solid #ff5c5c; color:#ffa3a3; padding:12px 14px; border-radius:8px; margin:10px 0; }
+  .info-box { background:#142238; border:1.5px solid #4f8ff7; padding:12px 14px; border-radius:8px; margin:10px 0; }
+  .chip-box { background:#221a3b; border:1.5px solid #a78bfa; padding:12px 14px; border-radius:8px; margin:10px 0; }
+  .warn-box { background:#33240f; border:1.5px solid #f39c4a; padding:12px 14px; border-radius:8px; margin:10px 0; }
 
   .raw-data-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; font-size: 13px; }
   @media (max-width: 640px) { .raw-data-grid { grid-template-columns: 1fr; } }
 
   table.inst-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
-  table.inst-table th, table.inst-table td { border: 1px solid #e2e7f2; padding: 7px 10px; text-align: right; }
-  table.inst-table th { background: #eef3ff; color: #1a3a6b; text-align: center; }
-  table.inst-table td.name { text-align: left; font-weight: 600; color: #333; }
-  .pos { color: #c02020; font-weight: 700; }
-  .neg { color: #27ae60; font-weight: 700; }
+  table.inst-table th, table.inst-table td { border: 1px solid #2a3442; padding: 7px 10px; text-align: right; }
+  table.inst-table th { background: #1c2a40; color: #8fb4ff; text-align: center; }
+  table.inst-table td.name { text-align: left; font-weight: 600; color: #dfe5ee; }
+  .pos { color: #ff5c5c; font-weight: 700; }
+  .neg { color: #3ecf74; font-weight: 700; }
 
   .chart-svg { width: 100%; height: auto; display: block; }
   .chart-wrap { width: 100%; overflow-x: auto; }
@@ -82,28 +86,28 @@
   .slider-row input[type=range] { flex: 1; }
 
   .spinner {
-    display: inline-block; width: 16px; height: 16px; border: 2px solid #ccc;
-    border-top-color: #2d6abf; border-radius: 50%; animation: spin 0.8s linear infinite;
+    display: inline-block; width: 16px; height: 16px; border: 2px solid #3a4658;
+    border-top-color: #5b9bff; border-radius: 50%; animation: spin 0.8s linear infinite;
     vertical-align: middle; margin-right: 6px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  footer { text-align: center; color: #aaa; font-size: 11px; margin-top: 30px; padding: 16px; border-top: 1px solid #eee; }
+  footer { text-align: center; color: #6b7588; font-size: 11px; margin-top: 30px; padding: 16px; border-top: 1px solid #2a3442; }
   .hidden { display: none !important; }
 
   .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 10px 0; }
-  .metric { background: #f7f9ff; border: 1px solid #e2e7f2; border-radius: 8px; padding: 10px 12px; min-width: 0; }
-  .metric .m-label { font-size: 12px; color: #666; }
-  .metric .m-value { font-size: 18px; font-weight: 700; color: #1a3a6b; overflow-wrap: anywhere; }
+  .metric { background: #1d2633; border: 1px solid #2a3442; border-radius: 8px; padding: 10px 12px; min-width: 0; }
+  .metric .m-label { font-size: 12px; color: #a3adbd; }
+  .metric .m-value { font-size: 18px; font-weight: 700; color: #8fb4ff; overflow-wrap: anywhere; }
   .metric .m-note { font-size: 12px; margin-top: 2px; }
 
   .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px 14px; margin: 10px 0; }
-  .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #444; }
+  .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #c5cdd9; }
   .field input, .field select {
-    border: 1px solid #ccd3e0; border-radius: 8px; padding: 9px 10px; font-size: 14px;
-    background: white; color: #333; width: 100%;
+    border: 1px solid #3a4658; border-radius: 8px; padding: 9px 10px; font-size: 14px;
+    background: #0f141c; color: #dfe5ee; width: 100%;
   }
-  .field .hint { font-size: 11.5px; color: #888; }
+  .field .hint { font-size: 11.5px; color: #8d98aa; }
 
   .dual-score { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .dual-score .score-badge { min-width: 0; }
@@ -111,19 +115,19 @@
   .flag-list { margin: 6px 0 0; padding-left: 20px; }
   .flag-list li { margin: 3px 0; }
 
-  details.fold > summary { cursor: pointer; font-weight: 600; color: #1a3a6b; font-size: 14px; padding: 6px 0; }
+  details.fold > summary { cursor: pointer; font-weight: 600; color: #8fb4ff; font-size: 14px; padding: 6px 0; }
   details.card > summary { cursor: pointer; list-style: none; }
   details.card > summary::-webkit-details-marker { display: none; }
   details.card > summary h2 { margin-bottom: 0; }
   details.card[open] > summary h2 { margin-bottom: 12px; }
-  details.card > summary h2::after { content: "▸ 展開"; float: right; font-size: 12px; color: #888; font-weight: 400; }
+  details.card > summary h2::after { content: "▸ 展開"; float: right; font-size: 12px; color: #8d98aa; font-weight: 400; }
   details.card[open] > summary h2::after { content: "▾ 收合"; }
 
   table.data-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
-  table.data-table th, table.data-table td { border: 1px solid #e2e7f2; padding: 7px 8px; text-align: right; }
-  table.data-table th { background: #eef3ff; color: #1a3a6b; text-align: center; }
+  table.data-table th, table.data-table td { border: 1px solid #2a3442; padding: 7px 8px; text-align: right; }
+  table.data-table th { background: #1c2a40; color: #8fb4ff; text-align: center; }
   table.data-table td:first-child { text-align: left; font-weight: 600; }
-  table.data-table tr.hl td { background: #f7f9ff; }
+  table.data-table tr.hl td { background: #1d2633; }
   .table-wrap { width: 100%; overflow-x: auto; }
 
   /* 手機版：縮小留白；輸入框 16px 以上，避免 iOS Safari 點擊時自動放大畫面 */
@@ -348,7 +352,7 @@
       <p class="caption">上傳看盤軟體截圖（K 線、法人買賣超、融資等畫面），AI 只回報畫面上實際看得到的數據，再與上方自動抓取的數據交叉比對。</p>
       <div class="no-report">
         <input type="file" id="shotInput" accept="image/*">
-        <img id="shotPreview" class="hidden" alt="截圖預覽" style="max-width:100%;margin-top:10px;border:1px solid #e2e7f2;border-radius:8px">
+        <img id="shotPreview" class="hidden" alt="截圖預覽" style="max-width:100%;margin-top:10px;border:1px solid #2a3442;border-radius:8px">
         <div class="input-row" style="margin-top:10px"><button id="shotBtn" class="secondary" disabled>🔍 AI 解讀截圖</button></div>
       </div>
       <div id="shotResult"></div>
@@ -799,12 +803,12 @@ function calcChipTechScore(instSig, marginSig, dtSig) {
 }
 
 function gradeScore(s) {
-  if (s >= 85) return ["A+", "#27ae60"];
-  if (s >= 70) return ["A", "#2d9e60"];
-  if (s >= 55) return ["B+", "#e67e22"];
-  if (s >= 40) return ["B", "#c47800"];
-  if (s >= 25) return ["C", "#e05252"];
-  return ["D", "#c02020"];
+  if (s >= 85) return ["A+", "#3ecf74"];
+  if (s >= 70) return ["A", "#3ecf74"];
+  if (s >= 55) return ["B+", "#f39c4a"];
+  if (s >= 40) return ["B", "#f0a63a"];
+  if (s >= 25) return ["C", "#ff7a7a"];
+  return ["D", "#ff5c5c"];
 }
 
 // 統計相關係數（Pearson）
@@ -954,7 +958,7 @@ function xLabelsSvg(dates, padT, plotH, plotW, step) {
     const i = Math.round(k * (n - 1) / (want - 1 || 1));
     const x = PAD.L + step * (i + 0.5);
     const d = dates[i].slice(5); // MM-DD
-    out += `<text x="${x.toFixed(1)}" y="${(padT + plotH + 16).toFixed(1)}" font-size="10" fill="#888" text-anchor="middle">${d}</text>`;
+    out += `<text x="${x.toFixed(1)}" y="${(padT + plotH + 16).toFixed(1)}" font-size="10" fill="#8d98aa" text-anchor="middle">${d}</text>`;
   }
   return out;
 }
@@ -986,13 +990,13 @@ function renderPriceChartSVG(full, sname) {
   // 格線 + y 軸標籤
   niceTicks(ymin, ymax, 5).forEach(t => {
     const yy = y(t);
-    svg += `<line x1="${PAD.L}" y1="${yy.toFixed(1)}" x2="${W - PAD.R}" y2="${yy.toFixed(1)}" stroke="#eef1f6"/>`;
-    svg += `<text x="${PAD.L - 6}" y="${(yy + 3).toFixed(1)}" font-size="10" fill="#999" text-anchor="end">${t.toFixed(t < 50 ? 1 : 0)}</text>`;
+    svg += `<line x1="${PAD.L}" y1="${yy.toFixed(1)}" x2="${W - PAD.R}" y2="${yy.toFixed(1)}" stroke="#263040"/>`;
+    svg += `<text x="${PAD.L - 6}" y="${(yy + 3).toFixed(1)}" font-size="10" fill="#7d889a" text-anchor="end">${t.toFixed(t < 50 ? 1 : 0)}</text>`;
   });
   // K 棒
   view.forEach((r, i) => {
     const up = r.close >= r.open;
-    const col = up ? "#c02020" : "#27ae60";
+    const col = up ? "#ff5c5c" : "#3ecf74";
     const x = cx(i);
     svg += `<line x1="${x.toFixed(1)}" y1="${y(r.high).toFixed(1)}" x2="${x.toFixed(1)}" y2="${y(r.low).toFixed(1)}" stroke="${col}" stroke-width="1"/>`;
     const yA = y(Math.max(r.open, r.close)), yB = y(Math.min(r.open, r.close));
@@ -1005,16 +1009,16 @@ function renderPriceChartSVG(full, sname) {
     return pts ? `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.3"/>` : "";
   };
   svg += maLine(ma5, "#e6b800");
-  svg += maLine(ma10, "#c026d3");
-  svg += maLine(ma20, "#0891b2");
-  svg += maLine(ma60, "#92400e");
+  svg += maLine(ma10, "#e060f0");
+  svg += maLine(ma20, "#22c3e6");
+  svg += maLine(ma60, "#d9a066");
   // 標題 + 圖例
-  svg += `<text x="${W / 2}" y="20" font-size="${titleFs(W)}" fill="#1a3a6b" text-anchor="middle" font-weight="700">${esc(sname)} 近${viewN}個交易日 K線圖</text>`;
-  const legend = [["MA5", "#e6b800"], ["MA10", "#c026d3"], ["MA20", "#0891b2"], ["MA60", "#92400e"]];
+  svg += `<text x="${W / 2}" y="20" font-size="${titleFs(W)}" fill="#8fb4ff" text-anchor="middle" font-weight="700">${esc(sname)} 近${viewN}個交易日 K線圖</text>`;
+  const legend = [["MA5", "#e6b800"], ["MA10", "#e060f0"], ["MA20", "#22c3e6"], ["MA60", "#d9a066"]];
   let lx = PAD.L;
   legend.forEach(([nm, c]) => {
     svg += `<line x1="${lx}" y1="34" x2="${lx + 16}" y2="34" stroke="${c}" stroke-width="2.5"/>`;
-    svg += `<text x="${lx + 20}" y="37.5" font-size="10" fill="#555">${nm}</text>`;
+    svg += `<text x="${lx + 20}" y="37.5" font-size="10" fill="#b3bccb">${nm}</text>`;
     lx += 62;
   });
   svg += xLabelsSvg(dates, padT, plotH, plotW, step);
@@ -1032,17 +1036,17 @@ function renderVolumeSVG(view, viewN, step) {
   const cx = i => PAD.L + step * (i + 0.5);
   const vmax = Math.max(...view.map(r => r.volume), 1);
   const cw = Math.max(1.5, step * 0.62);
-  let svg = `<text x="${PAD.L}" y="14" font-size="11" fill="#555">成交量（股）</text>`;
+  let svg = `<text x="${PAD.L}" y="14" font-size="11" fill="#b3bccb">成交量（股）</text>`;
   niceTicks(0, vmax, 3).forEach(t => {
     const yy = padT + (1 - t / vmax) * plotH;
-    svg += `<line x1="${PAD.L}" y1="${yy.toFixed(1)}" x2="${W - PAD.R}" y2="${yy.toFixed(1)}" stroke="#eef1f6"/>`;
-    svg += `<text x="${PAD.L - 6}" y="${(yy + 3).toFixed(1)}" font-size="10" fill="#999" text-anchor="end">${fmtNum(t)}</text>`;
+    svg += `<line x1="${PAD.L}" y1="${yy.toFixed(1)}" x2="${W - PAD.R}" y2="${yy.toFixed(1)}" stroke="#263040"/>`;
+    svg += `<text x="${PAD.L - 6}" y="${(yy + 3).toFixed(1)}" font-size="10" fill="#7d889a" text-anchor="end">${fmtNum(t)}</text>`;
   });
   view.forEach((r, i) => {
     const up = r.close >= r.open;
     const hh = (r.volume / vmax) * plotH;
     const yy = padT + plotH - hh;
-    svg += `<rect x="${(cx(i) - cw / 2).toFixed(1)}" y="${yy.toFixed(1)}" width="${cw.toFixed(1)}" height="${Math.max(0.5, hh).toFixed(1)}" fill="${up ? "#e6a3a3" : "#a3d3b0"}"/>`;
+    svg += `<rect x="${(cx(i) - cw / 2).toFixed(1)}" y="${yy.toFixed(1)}" width="${cw.toFixed(1)}" height="${Math.max(0.5, hh).toFixed(1)}" fill="${up ? "#8a3c3c" : "#2f6b45"}"/>`;
   });
   document.getElementById("volumeDiv").innerHTML =
     `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" xmlns="${svgNS}">${svg}</svg>`;
@@ -1061,20 +1065,20 @@ function renderMacdSVG(full, s, viewN, step, dates) {
   const y = v => padT + (1 - (v - mn) / (mx - mn)) * plotH;
   const cw = Math.max(1, step * 0.5);
 
-  let svg = `<text x="${PAD.L}" y="14" font-size="11" fill="#555">MACD（DIF橘／DEA藍／柱狀）</text>`;
+  let svg = `<text x="${PAD.L}" y="14" font-size="11" fill="#b3bccb">MACD（DIF橘／DEA藍／柱狀）</text>`;
   // 零軸：0 軸以下的區域淡淡標紅，提醒這一區是空方格局
   const y0 = y(0);
-  svg += `<rect x="${PAD.L}" y="${y0.toFixed(1)}" width="${W - PAD.L - PAD.R}" height="${Math.max(0, padT + plotH - y0).toFixed(1)}" fill="#c02020" opacity="0.05"/>`;
-  svg += `<line x1="${PAD.L}" y1="${y0.toFixed(1)}" x2="${W - PAD.R}" y2="${y0.toFixed(1)}" stroke="#999" stroke-dasharray="3 3"/>`;
-  svg += `<text x="${PAD.L - 6}" y="${(y0 + 3).toFixed(1)}" font-size="10" fill="#666" text-anchor="end">0 軸</text>`;
+  svg += `<rect x="${PAD.L}" y="${y0.toFixed(1)}" width="${W - PAD.L - PAD.R}" height="${Math.max(0, padT + plotH - y0).toFixed(1)}" fill="#ff5c5c" opacity="0.05"/>`;
+  svg += `<line x1="${PAD.L}" y1="${y0.toFixed(1)}" x2="${W - PAD.R}" y2="${y0.toFixed(1)}" stroke="#7d889a" stroke-dasharray="3 3"/>`;
+  svg += `<text x="${PAD.L - 6}" y="${(y0 + 3).toFixed(1)}" font-size="10" fill="#a3adbd" text-anchor="end">0 軸</text>`;
   const difLast = lastOf(dif.filter(v => v != null)), deaLast = lastOf(dea.filter(v => v != null));
   if (difLast < 0 && deaLast < 0) {
-    svg += `<text x="${W - PAD.R}" y="14" font-size="11" fill="#c02020" text-anchor="end" font-weight="700">⚠ 目前在 0 軸以下</text>`;
+    svg += `<text x="${W - PAD.R}" y="14" font-size="11" fill="#ff5c5c" text-anchor="end" font-weight="700">⚠ 目前在 0 軸以下</text>`;
   }
   // 柱狀
   hist.forEach((v, i) => {
     if (v == null) return;
-    const yy = y(v), col = v >= 0 ? "#d98c8c" : "#8cc7a0";
+    const yy = y(v), col = v >= 0 ? "#d96a6a" : "#4fb377";
     const top = Math.min(yy, y0), h = Math.abs(yy - y0);
     svg += `<rect x="${(cx(i) - cw / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${cw.toFixed(1)}" height="${Math.max(0.5, h).toFixed(1)}" fill="${col}"/>`;
   });
@@ -1083,7 +1087,7 @@ function renderMacdSVG(full, s, viewN, step, dates) {
     return pts ? `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.3"/>` : "";
   };
   svg += line(dif, "#f39c12");
-  svg += line(dea, "#2d6abf");
+  svg += line(dea, "#5b9bff");
   svg += xLabelsSvg(dates, padT, plotH, W - PAD.L - PAD.R, step);
   document.getElementById("macdDiv").innerHTML =
     `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" xmlns="${svgNS}">${svg}</svg>`;
@@ -1105,12 +1109,12 @@ function renderWaveChartSVG(priceRows, wave, sname) {
   let svg = "";
   niceTicks(ymin, ymax, 5).forEach(t => {
     const yy = y(t);
-    svg += `<line x1="${PAD.L}" y1="${yy.toFixed(1)}" x2="${W - PAD.R}" y2="${yy.toFixed(1)}" stroke="#eef1f6"/>`;
-    svg += `<text x="${PAD.L - 6}" y="${(yy + 3).toFixed(1)}" font-size="10" fill="#999" text-anchor="end">${t.toFixed(t < 50 ? 1 : 0)}</text>`;
+    svg += `<line x1="${PAD.L}" y1="${yy.toFixed(1)}" x2="${W - PAD.R}" y2="${yy.toFixed(1)}" stroke="#263040"/>`;
+    svg += `<text x="${PAD.L - 6}" y="${(yy + 3).toFixed(1)}" font-size="10" fill="#7d889a" text-anchor="end">${t.toFixed(t < 50 ? 1 : 0)}</text>`;
   });
   const closePts = closes.map((v, i) => `${cx(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-  svg += `<polyline points="${closePts}" fill="none" stroke="#c7c7c7" stroke-width="1.2"/>`;
-  svg += `<text x="${W / 2}" y="20" font-size="${titleFs(W)}" fill="#1a3a6b" text-anchor="middle" font-weight="700">${esc(sname)} 近期轉折點與簡化波浪標記</text>`;
+  svg += `<polyline points="${closePts}" fill="none" stroke="#6b7588" stroke-width="1.2"/>`;
+  svg += `<text x="${W / 2}" y="20" font-size="${titleFs(W)}" fill="#8fb4ff" text-anchor="middle" font-weight="700">${esc(sname)} 近期轉折點與簡化波浪標記</text>`;
 
   if (wave.available) {
     const dateIdx = new Map(view.map((r, i) => [r.date, i]));
@@ -1118,10 +1122,10 @@ function renderWaveChartSVG(priceRows, wave, sname) {
       .filter(p => p.i !== null);
     if (pts.length) {
       const poly = pts.map(p => `${cx(p.i).toFixed(1)},${y(p.price).toFixed(1)}`).join(" ");
-      svg += `<polyline points="${poly}" fill="none" stroke="#7c3aed" stroke-width="2"/>`;
+      svg += `<polyline points="${poly}" fill="none" stroke="#a78bfa" stroke-width="2"/>`;
       pts.forEach(p => {
-        svg += `<circle cx="${cx(p.i).toFixed(1)}" cy="${y(p.price).toFixed(1)}" r="4" fill="#7c3aed"/>`;
-        svg += `<text x="${cx(p.i).toFixed(1)}" y="${(y(p.price) - 8).toFixed(1)}" font-size="11" fill="#5b21b6" text-anchor="middle" font-weight="700">${esc(p.label)}</text>`;
+        svg += `<circle cx="${cx(p.i).toFixed(1)}" cy="${y(p.price).toFixed(1)}" r="4" fill="#a78bfa"/>`;
+        svg += `<text x="${cx(p.i).toFixed(1)}" y="${(y(p.price) - 8).toFixed(1)}" font-size="11" fill="#c4b5fd" text-anchor="middle" font-weight="700">${esc(p.label)}</text>`;
       });
     }
   }
@@ -1146,14 +1150,14 @@ function renderFxChartSVG(fx, sname) {
   const yc = v => padT + (1 - (v - cmin) / ((cmax - cmin) || 1)) * plotH;
   const yr = v => padT + (1 - (v - rmin) / ((rmax - rmin) || 1)) * plotH;
 
-  let svg = `<text x="${W / 2}" y="20" font-size="${titleFs(W)}" fill="#1a3a6b" text-anchor="middle" font-weight="700">${esc(sname)} 收盤價 vs 美元/新台幣${W < 600 ? "" : "（走勢對照，各自縮放）"}</text>`;
+  let svg = `<text x="${W / 2}" y="20" font-size="${titleFs(W)}" fill="#8fb4ff" text-anchor="middle" font-weight="700">${esc(sname)} 收盤價 vs 美元/新台幣${W < 600 ? "" : "（走勢對照，各自縮放）"}</text>`;
   const cPts = closes.map((v, i) => `${cx(i).toFixed(1)},${yc(v).toFixed(1)}`).join(" ");
   const rPts = rates.map((v, i) => `${cx(i).toFixed(1)},${yr(v).toFixed(1)}`).join(" ");
-  svg += `<polyline points="${cPts}" fill="none" stroke="#c02020" stroke-width="1.6"/>`;
-  svg += `<polyline points="${rPts}" fill="none" stroke="#2d6abf" stroke-width="1.6"/>`;
+  svg += `<polyline points="${cPts}" fill="none" stroke="#ff5c5c" stroke-width="1.6"/>`;
+  svg += `<polyline points="${rPts}" fill="none" stroke="#5b9bff" stroke-width="1.6"/>`;
   // 圖例
-  svg += `<line x1="${PAD.L}" y1="34" x2="${PAD.L + 16}" y2="34" stroke="#c02020" stroke-width="2.5"/><text x="${PAD.L + 20}" y="37.5" font-size="10" fill="#555">${esc(sname)}收盤</text>`;
-  svg += `<line x1="${PAD.L + 120}" y1="34" x2="${PAD.L + 136}" y2="34" stroke="#2d6abf" stroke-width="2.5"/><text x="${PAD.L + 140}" y="37.5" font-size="10" fill="#555">USD/TWD</text>`;
+  svg += `<line x1="${PAD.L}" y1="34" x2="${PAD.L + 16}" y2="34" stroke="#ff5c5c" stroke-width="2.5"/><text x="${PAD.L + 20}" y="37.5" font-size="10" fill="#b3bccb">${esc(sname)}收盤</text>`;
+  svg += `<line x1="${PAD.L + 120}" y1="34" x2="${PAD.L + 136}" y2="34" stroke="#5b9bff" stroke-width="2.5"/><text x="${PAD.L + 140}" y="37.5" font-size="10" fill="#b3bccb">USD/TWD</text>`;
   svg += xLabelsSvg(dates, padT, plotH, plotW, step);
   document.getElementById("fxDiv").innerHTML =
     `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" xmlns="${svgNS}">${svg}</svg>`;
@@ -1454,7 +1458,7 @@ const JUDGE_KEYS = ["cyc", "moat", "pol", "mshare", "rate", "macro", "strat"];
 
 function metricHtml(label, value, note, noteColor) {
   return `<div class="metric"><div class="m-label">${label}</div><div class="m-value">${value}</div>` +
-    (note ? `<div class="m-note" style="color:${noteColor || "#666"}">${note}</div>` : "") + `</div>`;
+    (note ? `<div class="m-note" style="color:${noteColor || "#a3adbd"}">${note}</div>` : "") + `</div>`;
 }
 
 function flagsHtml(flags, title, okText) {
@@ -1472,20 +1476,20 @@ function renderBarChartSVG(elId, bars, title, fmtV, labelEvery) {
   const pv = (mx - mn) * 0.12 || 1; mx += pv; if (mn < 0) mn -= pv;
   const y = v => padT + (1 - (v - mn) / (mx - mn)) * plotH;
   const step = plotW / bars.length, bw = Math.max(2, step * 0.6);
-  let svg = `<text x="${W / 2}" y="18" font-size="${titleFs(W)}" fill="#1a3a6b" text-anchor="middle" font-weight="700">${esc(title)}</text>`;
+  let svg = `<text x="${W / 2}" y="18" font-size="${titleFs(W)}" fill="#8fb4ff" text-anchor="middle" font-weight="700">${esc(title)}</text>`;
   niceTicks(mn, mx, 4).forEach(t => {
-    svg += `<line x1="${PAD.L}" y1="${y(t).toFixed(1)}" x2="${W - PAD.R}" y2="${y(t).toFixed(1)}" stroke="#eef1f6"/>`;
-    svg += `<text x="${PAD.L - 6}" y="${(y(t) + 3).toFixed(1)}" font-size="10" fill="#999" text-anchor="end">${fmtV(t)}</text>`;
+    svg += `<line x1="${PAD.L}" y1="${y(t).toFixed(1)}" x2="${W - PAD.R}" y2="${y(t).toFixed(1)}" stroke="#263040"/>`;
+    svg += `<text x="${PAD.L - 6}" y="${(y(t) + 3).toFixed(1)}" font-size="10" fill="#7d889a" text-anchor="end">${fmtV(t)}</text>`;
   });
   const y0 = y(0);
   const showValue = step >= 26;
   bars.forEach((b, i) => {
     const x = PAD.L + step * (i + 0.5), yy = y(b.value);
     svg += `<rect x="${(x - bw / 2).toFixed(1)}" y="${Math.min(yy, y0).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0.5, Math.abs(yy - y0)).toFixed(1)}" fill="${b.color}"/>`;
-    if (showValue) svg += `<text x="${x.toFixed(1)}" y="${(b.value >= 0 ? yy - 4 : yy + 12).toFixed(1)}" font-size="10" fill="#444" text-anchor="middle">${fmtV(b.value)}</text>`;
-    if (i % labelEvery === 0 || i === bars.length - 1) svg += `<text x="${x.toFixed(1)}" y="${(H - 6).toFixed(1)}" font-size="10" fill="#888" text-anchor="middle">${esc(b.label)}</text>`;
+    if (showValue) svg += `<text x="${x.toFixed(1)}" y="${(b.value >= 0 ? yy - 4 : yy + 12).toFixed(1)}" font-size="10" fill="#c5cdd9" text-anchor="middle">${fmtV(b.value)}</text>`;
+    if (i % labelEvery === 0 || i === bars.length - 1) svg += `<text x="${x.toFixed(1)}" y="${(H - 6).toFixed(1)}" font-size="10" fill="#8d98aa" text-anchor="middle">${esc(b.label)}</text>`;
   });
-  svg += `<line x1="${PAD.L}" y1="${y0.toFixed(1)}" x2="${W - PAD.R}" y2="${y0.toFixed(1)}" stroke="#bbb"/>`;
+  svg += `<line x1="${PAD.L}" y1="${y0.toFixed(1)}" x2="${W - PAD.R}" y2="${y0.toFixed(1)}" stroke="#5a6577"/>`;
   el.innerHTML = `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" xmlns="${svgNS}">${svg}</svg>`;
 }
 
@@ -1495,13 +1499,13 @@ function renderFundamentalCharts() {
   const epsBars = fin.annualEps.slice(-5).map(a => ({
     label: a.complete ? String(a.year) : `${a.year}(${a.quarters}季)`,
     value: a.eps,
-    color: !a.complete ? "#a0b4d8" : a.eps > 0 ? "#27ae60" : "#c02020",
+    color: !a.complete ? "#4d6488" : a.eps > 0 ? "#3ecf74" : "#ff5c5c",
   }));
   renderBarChartSVG("epsChartDiv", epsBars, `${sname} 年度 EPS（元）`, v => v.toFixed(1), 1);
   if (revenue) {
     const revBars = revenue.monthly.map(m => ({
       label: m.label, value: m.v / 1e8,
-      color: m.yoy === null ? "#2d6abf" : m.yoy >= 0 ? "#2d6abf" : "#a0b4d8",
+      color: m.yoy === null ? "#5b9bff" : m.yoy >= 0 ? "#5b9bff" : "#4d6488",
     }));
     renderBarChartSVG("revChartDiv", revBars, `${sname} 近 24 個月月營收（億元，淺色＝年減）`, fmtYi, 6);
   } else {
@@ -1545,10 +1549,10 @@ function renderFundamentals(stockId, sname, industry, priceRows, fundData, macdS
   const pct = v => v === null ? "N/A" : `${v.toFixed(1)}%`;
   document.getElementById("finGrid").innerHTML =
     metricHtml("近 4 季 EPS", fin.ttmEps === null ? "N/A" : `${fin.ttmEps.toFixed(2)} 元`,
-      fin.prevTtmEps !== null ? `前期 ${fin.prevTtmEps.toFixed(2)} 元` : "", fin.ttmEps > fin.prevTtmEps ? "#27ae60" : "#c02020") +
-    metricHtml("ROE（近 4 季）", pct(fin.roe), fin.roe === null ? "" : fin.roe >= 15 ? "健全 ✅" : "偏低 ⚠️", fin.roe >= 15 ? "#27ae60" : "#e67e22") +
+      fin.prevTtmEps !== null ? `前期 ${fin.prevTtmEps.toFixed(2)} 元` : "", fin.ttmEps > fin.prevTtmEps ? "#3ecf74" : "#ff5c5c") +
+    metricHtml("ROE（近 4 季）", pct(fin.roe), fin.roe === null ? "" : fin.roe >= 15 ? "健全 ✅" : "偏低 ⚠️", fin.roe >= 15 ? "#3ecf74" : "#f39c4a") +
     metricHtml("稅後淨利率", pct(fin.netMargin), "近 4 季") +
-    metricHtml("負債比率", pct(fin.debtRatio), fin.debtRatio === null ? "" : fin.debtRatio < 60 ? "正常 ✅" : "偏高 ⚠️", fin.debtRatio < 60 ? "#27ae60" : "#e67e22");
+    metricHtml("負債比率", pct(fin.debtRatio), fin.debtRatio === null ? "" : fin.debtRatio < 60 ? "正常 ✅" : "偏高 ⚠️", fin.debtRatio < 60 ? "#3ecf74" : "#f39c4a");
   document.getElementById("finFlags").innerHTML = fin.hasData
     ? flagsHtml(flagsA, "財務紅旗（任一成立應謹慎）", "財務紅旗確認通過：無明顯財務異常")
     : `<div class="info-box">查無財報資料（ETF 或新上市股票通常沒有），基本面相關評分以 0 分計。</div>`;
@@ -1613,7 +1617,7 @@ function renderBigHolders(big) {
   const n = big.weeks.length;
   sigEl.innerHTML =
     `<div class="metric-grid">` +
-    metricHtml(`400張以上 ${n}週變化`, `${signed(big.deltaBig, 2)}%`, "", big.deltaBig >= 0 ? "#c02020" : "#27ae60") +
+    metricHtml(`400張以上 ${n}週變化`, `${signed(big.deltaBig, 2)}%`, "", big.deltaBig >= 0 ? "#ff5c5c" : "#3ecf74") +
     metricHtml(`千張以上 ${n}週變化`, `${signed(big.delta1000, 2)}%`) +
     metricHtml("外資持股同期變化", big.deltaFor === null ? "N/A" : `${signed(big.deltaFor, 2)}%`) +
     metricHtml("資料週數", `${n} 週`, n < 6 ? "累積中，目標 6 週" : "") +
@@ -1636,7 +1640,7 @@ function recalcForecast() {
   const A = v.A, B = isNaN(v.B) ? null : v.B;
   const C = A > 0 ? A * (1 + (B ?? 0) / 100) : null;
   document.getElementById("revResult").innerHTML = C
-    ? `<div class="info-box"><b>③ 今年預估全年營收 C = A × (1 + B)</b><br><span style="font-size:19px;font-weight:700;color:#1a3a6b">${fmtYi(A)} 億 × (1 ${B >= 0 ? "+" : "−"} ${Math.abs(B ?? 0).toFixed(1)}%) = <span style="color:#2d6abf">${fmtYi(C)} 億元</span></span></div>`
+    ? `<div class="info-box"><b>③ 今年預估全年營收 C = A × (1 + B)</b><br><span style="font-size:19px;font-weight:700;color:#8fb4ff">${fmtYi(A)} 億 × (1 ${B >= 0 ? "+" : "−"} ${Math.abs(B ?? 0).toFixed(1)}%) = <span style="color:#5b9bff">${fmtYi(C)} 億元</span></span></div>`
     : `<div class="warn-box">請填入上年度營收 A 以計算預估值</div>`;
   const flagsC = [];
   if (B !== null && B < 0) flagsC.push(`年增率 ${B.toFixed(1)}% < 0%，營收萎縮`);
@@ -1706,10 +1710,10 @@ function recalcForecast() {
   document.getElementById("ltItems").innerHTML = itemsHtml(s.lt);
 
   let text, col;
-  if (s.ltScore >= 70 && s.stScore >= 55) { text = `📈 長短期皆強（長期 ${ltG}／短期 ${stG}）→ 可考慮積極建立部位`; col = "#27ae60"; }
-  else if (s.ltScore >= 70) { text = `📅 長期佳但短期動能不足（長期 ${ltG}／短期 ${stG}）→ 建議長期持有，分批進場`; col = "#2d6abf"; }
-  else if (s.stScore >= 55) { text = `⚡ 短期動能強但長期品質待確認（短期 ${stG}）→ 小部位短線操作`; col = "#e67e22"; }
-  else { text = `⚠️ 長短期評分均偏低（長期 ${ltG}／短期 ${stG}）→ 建議觀望等待訊號改善`; col = "#c02020"; }
+  if (s.ltScore >= 70 && s.stScore >= 55) { text = `📈 長短期皆強（長期 ${ltG}／短期 ${stG}）→ 可考慮積極建立部位`; col = "#3ecf74"; }
+  else if (s.ltScore >= 70) { text = `📅 長期佳但短期動能不足（長期 ${ltG}／短期 ${stG}）→ 建議長期持有，分批進場`; col = "#5b9bff"; }
+  else if (s.stScore >= 55) { text = `⚡ 短期動能強但長期品質待確認（短期 ${stG}）→ 小部位短線操作`; col = "#f39c4a"; }
+  else { text = `⚠️ 長短期評分均偏低（長期 ${ltG}／短期 ${stG}）→ 建議觀望等待訊號改善`; col = "#ff5c5c"; }
   const box = document.getElementById("verdictBox");
   box.className = "verdict";
   box.style.cssText = `background:${col}18;border-color:${col};color:${col}`;
@@ -1877,7 +1881,7 @@ async function fetchCompanyProfile(apiKey, stockId, name, industry, official) {
   }
 }
 
-const PROFILE_COLORS = ["#2d6abf", "#27ae60", "#e67e22", "#7c3aed", "#0891b2", "#c02020", "#92400e"];
+const PROFILE_COLORS = ["#5b9bff", "#3ecf74", "#f39c4a", "#a78bfa", "#22c3e6", "#ff5c5c", "#d9a066"];
 const safeUrl = u => /^https?:\/\//i.test(u) ? u : null;
 
 function renderProfile(profile, savedAt) {
@@ -1900,12 +1904,12 @@ function renderProfile(profile, savedAt) {
       return seg;
     }).join("");
     const legend = segs.map((s, i) =>
-      `<div class="item-row"><span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:${PROFILE_COLORS[i % PROFILE_COLORS.length]};margin-right:6px"></span><b>${esc(s.name)}</b> ${s.share_pct.toFixed(0)}%${s.note ? `　<span style="color:#666">${esc(s.note)}</span>` : ""}</div>`).join("");
-    chart = `<h3>營收結構</h3><svg width="100%" height="28" style="display:block;border-radius:6px;background:#eef1f6">${bar}</svg>${legend}`;
+      `<div class="item-row"><span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:${PROFILE_COLORS[i % PROFILE_COLORS.length]};margin-right:6px"></span><b>${esc(s.name)}</b> ${s.share_pct.toFixed(0)}%${s.note ? `　<span style="color:#a3adbd">${esc(s.note)}</span>` : ""}</div>`).join("");
+    chart = `<h3>營收結構</h3><svg width="100%" height="28" style="display:block;border-radius:6px;background:#263040">${bar}</svg>${legend}`;
   } else if (profile.segments.length) {
     chart = `<h3>營收來源</h3>` + profile.segments.map(s => `<div class="item-row">• <b>${esc(s.name)}</b>${s.note ? "：" + esc(s.note) : ""}</div>`).join("");
   }
-  const chips = arr => arr.map(t => `<span style="display:inline-block;background:#eef3ff;border:1px solid #d5dff2;border-radius:14px;padding:3px 10px;margin:3px 4px 3px 0;font-size:13px">${esc(t)}</span>`).join("");
+  const chips = arr => arr.map(t => `<span style="display:inline-block;background:#1c2a40;border:1px solid #2f3f58;border-radius:14px;padding:3px 10px;margin:3px 4px 3px 0;font-size:13px">${esc(t)}</span>`).join("");
   const sources = profile.sources.filter(s => safeUrl(s.url)).slice(0, 8)
     .map(s => `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title || s.url)}</a>`).join("　");
   box.innerHTML =
@@ -1933,7 +1937,7 @@ function renderOfficialProfile(o) {
   box.innerHTML =
     `<h3>📄 官方登記的主要經營業務</h3>` +
     `<div class="info-box" style="font-size:14.5px">${esc(o.mainBusiness)}</div>` +
-    `<div style="margin:6px 0">${facts.map(([k, v]) => `<span style="display:inline-block;margin:2px 14px 2px 0;font-size:13.5px"><span style="color:#666">${k}</span> <b>${esc(v)}</b></span>`).join("")}</div>` +
+    `<div style="margin:6px 0">${facts.map(([k, v]) => `<span style="display:inline-block;margin:2px 14px 2px 0;font-size:13.5px"><span style="color:#a3adbd">${k}</span> <b>${esc(v)}</b></span>`).join("")}</div>` +
     `<p class="caption">來源：公開資訊觀測站公司基本資料（${esc(o.updated)} 取得）` +
     (site ? `｜<a href="${esc(site)}" target="_blank" rel="noopener">公司官網 ↗</a>` : "") + `</p>`;
 }
@@ -2096,11 +2100,11 @@ function crossCheckShot(ext) {
 function renderShotResult(ext) {
   const rows = Object.entries(SHOT_LABELS).filter(([k]) => ext[k] && !ext[k].includes(NOT_SHOWN))
     .map(([k, label]) => `<tr><td>${label}</td><td style="text-align:left">${esc(ext[k])}</td></tr>`).join("");
-  const sigColor = { "偏多": "#c02020", "偏空": "#27ae60", "中性": "#e67e22" }[ext.overall_signal] || "#888";
+  const sigColor = { "偏多": "#ff5c5c", "偏空": "#3ecf74", "中性": "#f39c4a" }[ext.overall_signal] || "#8d98aa";
   document.getElementById("shotResult").innerHTML =
     `<h3>AI 從截圖辨識到的數據</h3>` +
     (rows ? `<div class="table-wrap"><table class="data-table">${rows}</table></div>` : `<div class="info-box">畫面上沒有可辨識的數據</div>`) +
-    `<div class="chip-box">AI 判讀：<b style="color:${sigColor}">${esc(ext.overall_signal)}</b>　依據：${esc(ext.signal_basis)}<br><span style="color:#666">把握程度：${esc(ext.confidence_note)}</span></div>` +
+    `<div class="chip-box">AI 判讀：<b style="color:${sigColor}">${esc(ext.overall_signal)}</b>　依據：${esc(ext.signal_basis)}<br><span style="color:#a3adbd">把握程度：${esc(ext.confidence_note)}</span></div>` +
     `<h3>🔄 與自動抓取數據交叉比對</h3>` +
     crossCheckShot(ext).map(n => `<div class="item-row">${esc(n)}</div>`).join("");
 }
@@ -2225,20 +2229,20 @@ function renderMacdEval(macdSig) {
   const listEl = document.getElementById("macdItemList");
   if (!macdSig) {
     sigEl.textContent = "資料不足";
-    sigEl.style.color = "#888";
-    badge.style.borderColor = "#ccc";
+    sigEl.style.color = "#8d98aa";
+    badge.style.borderColor = "#4a5566";
     listEl.innerHTML = "<div class='item-row'>❔ MACD 資料不足，無法評估</div>";
     return;
   }
   let label, color, bullets = [];
   const { cross, aboveZero, belowZero, momentumUp, difNow, deaNow, histNow } = macdSig;
-  if (cross === "golden" && aboveZero) { label = "多方轉強"; color = "#27ae60"; }
-  else if (cross === "golden") { label = "翻多訊號"; color = "#2d9e60"; }
-  else if (cross === "dead" && belowZero) { label = "空方轉弱"; color = "#c02020"; }
-  else if (cross === "dead") { label = "翻空訊號"; color = "#e05252"; }
-  else if (aboveZero && momentumUp) { label = "多方續強"; color = "#2d9e60"; }
-  else if (belowZero && !momentumUp) { label = "弱勢整理"; color = "#e05252"; }
-  else { label = "中性整理"; color = "#e67e22"; }
+  if (cross === "golden" && aboveZero) { label = "多方轉強"; color = "#3ecf74"; }
+  else if (cross === "golden") { label = "翻多訊號"; color = "#3ecf74"; }
+  else if (cross === "dead" && belowZero) { label = "空方轉弱"; color = "#ff5c5c"; }
+  else if (cross === "dead") { label = "翻空訊號"; color = "#ff7a7a"; }
+  else if (aboveZero && momentumUp) { label = "多方續強"; color = "#3ecf74"; }
+  else if (belowZero && !momentumUp) { label = "弱勢整理"; color = "#ff7a7a"; }
+  else { label = "中性整理"; color = "#f39c4a"; }
 
   bullets.push(cross === "golden" ? "✅ 近日出現黃金交叉（DIF 上穿 DEA），偏多"
     : cross === "dead" ? "🔴 近日出現死亡交叉（DIF 下穿 DEA），偏空"
@@ -2273,7 +2277,7 @@ function macdZeroNoteHtml(macdSig) {
 function renderInstBreakdown(bd, dtSig) {
   const table = document.getElementById("instTable");
   if (!bd) {
-    table.innerHTML = "<tr><td style='text-align:left;color:#888'>三大法人分項資料不足</td></tr>";
+    table.innerHTML = "<tr><td style='text-align:left;color:#8d98aa'>三大法人分項資料不足</td></tr>";
   } else {
     const cell = v => {
       const cls = v > 0 ? "pos" : v < 0 ? "neg" : "";
@@ -2284,7 +2288,7 @@ function renderInstBreakdown(bd, dtSig) {
     table.innerHTML =
       `<tr><th style="text-align:left">法人別</th><th>近5日淨買賣(張)</th><th>近10日淨買賣(張)</th></tr>` +
       row("外資", bd.foreign) + row("投信", bd.trust) + row("自營商", bd.dealer) +
-      `<tr style="background:#f7f9ff">${`<td class="name">三大法人合計</td>${cell(bd.total.d5)}${cell(bd.total.d10)}`}</tr>`;
+      `<tr style="background:#1d2633">${`<td class="name">三大法人合計</td>${cell(bd.total.d5)}${cell(bd.total.d10)}`}</tr>`;
   }
   const note = document.getElementById("dayTradeNote");
   if (dtSig && (dtSig.lotAvg !== null || dtSig.lastLot !== null)) {
@@ -2425,16 +2429,16 @@ async function runAnalysis() {
       leftHtml += `<div>投信 5日淨買賣：<b>${instSig.trustNet5 >= 0 ? "+" : ""}${lotStr(instSig.trustNet5)}</b> 張</div>`;
       leftHtml += `<div>投信連續買超：<b>${instSig.buyStreak}</b> 日／連續賣超：<b>${instSig.sellStreak}</b> 日</div>`;
     } else {
-      leftHtml = "<div style='color:#888'>三大法人／投信資料不足</div>";
+      leftHtml = "<div style='color:#8d98aa'>三大法人／投信資料不足</div>";
     }
     if (marginSig) {
       rightHtml += `<div>融資餘額5日變化：<b>${marginSig.marginChgPct >= 0 ? "+" : ""}${marginSig.marginChgPct.toFixed(1)}%</b></div>`;
       if (marginSig.priceChgPct !== null) rightHtml += `<div>股價同期變化：<b>${marginSig.priceChgPct >= 0 ? "+" : ""}${marginSig.priceChgPct.toFixed(1)}%</b></div>`;
     } else {
-      rightHtml = "<div style='color:#888'>融資資料不足</div>";
+      rightHtml = "<div style='color:#8d98aa'>融資資料不足</div>";
     }
     if (dtSig && dtSig.ratioAvg !== null) rightHtml += `<div>近5日信用當沖比例平均：<b>${dtSig.ratioAvg.toFixed(1)}%</b></div>`;
-    else rightHtml += "<div style='color:#888'>信用當沖資料不足</div>";
+    else rightHtml += "<div style='color:#8d98aa'>信用當沖資料不足</div>";
     rawGrid.innerHTML = `<div>${leftHtml}</div><div>${rightHtml}</div>`;
 
     // 法人分項 + 信用當沖數量
