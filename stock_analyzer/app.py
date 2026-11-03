@@ -469,12 +469,13 @@ def calc_chip_tech_score(inst_sig: dict | None, margin_sig: dict | None,
         bd5, sd5 = inst_sig["trust_buy_days5"], inst_sig["trust_sell_days5"]
         if bs >= 5:
             score += 25; items.append(("✅", f"投信連續 {bs} 日買超，籌碼集中度高", 25))
+        elif ss >= 5:
+            # 要排在「近5日賣超≥3天」之前：連賣 5 天一定也符合那條，放後面就永遠不會走到
+            score += 0; items.append(("🔴", f"投信連續 {ss} 日賣超，籌碼流失", 0))
         elif bd5 >= 3:
             score += 18; items.append(("✅", f"投信近5日有 {bd5} 天買超", 18))
         elif sd5 >= 3:
             score += 5; items.append(("⚠️", f"投信近5日有 {sd5} 天賣超", 5))
-        elif ss >= 5:
-            score += 0; items.append(("🔴", f"投信連續 {ss} 日賣超，籌碼流失", 0))
         else:
             score += 10; items.append(("➡️", "投信買賣互見，無明顯方向", 10))
     else:

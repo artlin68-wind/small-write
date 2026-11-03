@@ -89,7 +89,8 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
 
 if __name__ == "__main__":
     os.chdir(os.path.dirname(os.path.abspath(__file__)) or ".")
-    with socketserver.TCPServer(("", PORT), ProxyHandler) as httpd:
+    # 只綁本機：綁 "" 會讓同網路的其他電腦也能瀏覽整個資料夾（含 .git）並把這裡當公開代理
+    with socketserver.TCPServer(("127.0.0.1", PORT), ProxyHandler) as httpd:
         print(f"伺服器已啟動：http://localhost:{PORT}/")
         print("（此視窗需保持開啟，關閉視窗會停止伺服器）")
         httpd.serve_forever()

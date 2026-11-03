@@ -347,6 +347,20 @@
     </div>
 
     <div class="card">
+      <h2>📐 費波那契回撤／延伸評估</h2>
+      <p class="caption">取區間內最高價與最低價當作一個波段：先低後高為上升波段，量測「從高點回檔多少」；先高後低為下跌波段，量測「從低點反彈多少」。23.6%／38.2%／50%／61.8%／78.6% 是常見的支撐壓力參考，61.8% 為黃金分割關鍵價；127.2%／161.8% 為突破後的延伸目標。固定規則計算，僅供參考。</p>
+      <div class="no-report form-grid">
+        <label class="field"><span>波段區間</span><select id="fibLookback">
+          <option value="20">近 20 個交易日（短波段）</option>
+          <option value="60" selected>近 60 個交易日（中波段）</option>
+          <option value="0">全部資料（約 90 個交易日）</option></select></label>
+      </div>
+      <div class="chart-wrap"><div id="fibChartDiv"></div></div>
+      <div id="fibNote"></div>
+      <div class="table-wrap" id="fibTable"></div>
+    </div>
+
+    <div class="card">
       <h2>📸 STEP 6d｜技術線型截圖 AI 解讀＋交叉比對（選用）</h2>
       <p class="caption">上傳看盤軟體截圖（K 線、法人買賣超、融資等畫面），AI 只回報畫面上實際看得到的數據，再與上方自動抓取的數據交叉比對。</p>
       <div class="no-report">
@@ -753,12 +767,13 @@ function calcChipTechScore(instSig, marginSig, dtSig) {
     const { buyStreak, sellStreak, buyDays5, sellDays5 } = instSig;
     if (buyStreak >= 5) {
       score += 25; items.push(["✅", `投信連續 ${buyStreak} 日買超，籌碼集中度高`, 25]);
+    } else if (sellStreak >= 5) {
+      // 要排在「近5日賣超≥3天」之前：連賣 5 天一定也符合那條，放後面就永遠不會走到
+      score += 0; items.push(["🔴", `投信連續 ${sellStreak} 日賣超，籌碼流失`, 0]);
     } else if (buyDays5 >= 3) {
       score += 18; items.push(["✅", `投信近5日有 ${buyDays5} 天買超`, 18]);
     } else if (sellDays5 >= 3) {
       score += 5; items.push(["⚠️", `投信近5日有 ${sellDays5} 天賣超`, 5]);
-    } else if (sellStreak >= 5) {
-      score += 0; items.push(["🔴", `投信連續 ${sellStreak} 日賣超，籌碼流失`, 0]);
     } else {
       score += 10; items.push(["➡️", "投信買賣互見，無明顯方向", 10]);
     }
@@ -908,11 +923,72 @@ function simpleWaveCount(pivots, priceRows) {
 }
 
 // ══════════════════════════════════════════════════════════════
+//  費波那契回撤／延伸
+// ══════════════════════════════════════════════════════════════
+
+const FIB_RETRACE = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+const FIB_EXTEND = [1.272, 1.618];
+const fmtP = v => v.toFixed(v < 50 ? 2 : 1);
+
+// lookback = 0 代表用全部資料
+function calcFibonacci(priceRows, lookback) {
+  const view = lookback > 0 ? priceRows.slice(Math.max(0, priceRows.length - lookback)) : priceRows.slice();
+  if (view.length < 10) return null;
+  let hiIdx = 0, loIdx = 0;
+  view.forEach((r, i) => {
+    if (r.high > view[hiIdx].high) hiIdx = i;
+    if (r.low < view[loIdx].low) loIdx = i;
+  });
+  const high = view[hiIdx].high, low = view[loIdx].low, range = high - low;
+  if (!(range > 0)) return null;
+
+  const up = loIdx < hiIdx;   // 先低後高＝上升波段
+  const price = lastOf(view).close;
+  // 上升波段由高點往下量（0%＝高點、100%＝低點）；下跌波段由低點往上量（0%＝低點、100%＝高點）
+  const levels = FIB_RETRACE.map(r => ({ r, kind: "回撤", price: up ? high - range * r : low + range * r }));
+  // 延伸目標：上升波段往高點之上、下跌波段往低點之下
+  const exts = FIB_EXTEND.map(r => ({ r, kind: "延伸", price: up ? low + range * r : high - range * r }))
+    .filter(l => l.price > 0);
+  // pos：上升波段＝已從高點回檔的比例；下跌波段＝已從低點反彈的比例
+  const pos = up ? (high - price) / range : (price - low) / range;
+
+  const all = [...levels, ...exts];
+  const below = all.filter(l => l.price < price * 0.995).sort((a, b) => b.price - a.price);
+  const above = all.filter(l => l.price > price * 1.005).sort((a, b) => a.price - b.price);
+  const nearest = all.reduce((best, l) => Math.abs(l.price - price) < Math.abs(best.price - price) ? l : best);
+  const nearPct = Math.abs(nearest.price - price) / price * 100;
+
+  const lv = r => levels.find(l => l.r === r).price;
+  const ext = r => { const e = exts.find(l => l.r === r); return e ? fmtP(e.price) : "—"; };
+  let zone, color, text;
+  if (up) {
+    if (pos < 0.236) { zone = "強勢整理"; color = "#3ecf74"; text = `距波段高點 ${fmtP(high)} 回檔不到 23.6%，多方強勢。若帶量突破前高，延伸目標看 127.2%（${ext(1.272)}）、161.8%（${ext(1.618)}）；短線漲多也要留意追高風險。`; }
+    else if (pos < 0.382) { zone = "健康回檔"; color = "#3ecf74"; text = `回檔落在 23.6%–38.2%，是強勢股常見的淺回檔，上升趨勢完好；38.2%（${fmtP(lv(0.382))}）為第一道支撐。`; }
+    else if (pos <= 0.618) { zone = "正常回檔"; color = "#f39c4a"; text = `回檔進入 38.2%–61.8% 的正常修正區。61.8% 黃金分割（${fmtP(lv(0.618))}）是多方關鍵防守價，守住仍有機會續攻，可分批留意止跌訊號。`; }
+    else if (pos <= 0.786) { zone = "深度回檔"; color = "#ff7a7a"; text = `回檔已超過 61.8%，跌破黃金分割支撐（${fmtP(lv(0.618))}），上升波段結構轉弱，建議等站回 61.8% 或出現止跌訊號再考慮。`; }
+    else { zone = "趨勢恐反轉"; color = "#ff5c5c"; text = `回檔超過 78.6%，接近波段起漲低點 ${fmtP(low)}，這段上升波段可能已經失效；跌破低點即確認轉弱。`; }
+  } else {
+    if (pos < 0.236) { zone = "弱勢築底"; color = "#ff5c5c"; text = `距波段低點 ${fmtP(low)} 反彈不到 23.6%，空方仍主導。若跌破前低，下檔延伸看 127.2%（${ext(1.272)}）、161.8%（${ext(1.618)}）。`; }
+    else if (pos < 0.382) { zone = "弱勢反彈"; color = "#ff7a7a"; text = `反彈 23.6%–38.2%，屬跌深後的技術性反彈，上方 38.2%（${fmtP(lv(0.382))}）壓力仍重。`; }
+    else if (pos <= 0.618) { zone = "反彈遇壓"; color = "#f39c4a"; text = `反彈進入 38.2%–61.8% 壓力區。61.8% 黃金分割（${fmtP(lv(0.618))}）是空方關鍵壓力，帶量站上才有扭轉下跌趨勢的機會。`; }
+    else { zone = "強勢反彈"; color = "#3ecf74"; text = `反彈超過 61.8%，已收復大半跌幅，有機會扭轉下跌趨勢；留意能否突破前高 ${fmtP(high)}。`; }
+  }
+
+  return {
+    view, up, high, low, price, pos, levels, exts, zone, color, text,
+    hiDate: view[hiIdx].date, loDate: view[loIdx].date, hiIdx, loIdx,
+    support: below[0] || null, resist: above[0] || null,
+    near: nearPct < 1 ? nearest : null,
+  };
+}
+
+// ══════════════════════════════════════════════════════════════
 //  SVG 繪圖工具（自製，不依賴外部函式庫）
 // ══════════════════════════════════════════════════════════════
 
 const svgNS = "http://www.w3.org/2000/svg";
-function esc(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+// 也跳脫引號：結果會放進 href="…" 等屬性，少了引號跳脫就能跳出屬性塞入事件程式碼
+function esc(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;"); }
 
 function niceTicks(min, max, count) {
   const span = (max - min) || 1;
@@ -1159,6 +1235,39 @@ function renderFxChartSVG(fx, sname) {
   svg += `<line x1="${PAD.L + 120}" y1="34" x2="${PAD.L + 136}" y2="34" stroke="#5b9bff" stroke-width="2.5"/><text x="${PAD.L + 140}" y="37.5" font-size="10" fill="#b3bccb">USD/TWD</text>`;
   svg += xLabelsSvg(dates, padT, plotH, plotW, step);
   document.getElementById("fxDiv").innerHTML =
+    `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" xmlns="${svgNS}">${svg}</svg>`;
+}
+
+const FIB_COLORS = { 0: "#8d98aa", 0.236: "#22c3e6", 0.382: "#3ecf74", 0.5: "#e6b800", 0.618: "#f39c12", 0.786: "#e060f0", 1: "#8d98aa" };
+
+function renderFibChartSVG(fib, sname) {
+  const W = chartW(), H = chartH(340), padT = 36, padB = 22;
+  const view = fib.view, n = view.length;
+  const plotW = W - PAD.L - PAD.R, plotH = H - padT - padB;
+  const step = plotW / n;
+  const cx = i => PAD.L + step * (i + 0.5);
+  const pv = (fib.high - fib.low) * 0.06;
+  const ymin = fib.low - pv, ymax = fib.high + pv;
+  const y = v => padT + (1 - (v - ymin) / (ymax - ymin)) * plotH;
+
+  let svg = `<text x="${W / 2}" y="20" font-size="${titleFs(W)}" fill="#8fb4ff" text-anchor="middle" font-weight="700">${esc(sname)} 費波那契${fib.up ? "回撤（上升波段）" : "反彈（下跌波段）"}</text>`;
+  // 61.8%–38.2% 之間淡淡上色：最常見的回檔／反彈區
+  const y382 = y(fib.levels.find(l => l.r === 0.382).price), y618 = y(fib.levels.find(l => l.r === 0.618).price);
+  svg += `<rect x="${PAD.L}" y="${Math.min(y382, y618).toFixed(1)}" width="${plotW}" height="${Math.abs(y618 - y382).toFixed(1)}" fill="#f39c12" opacity="0.07"/>`;
+  fib.levels.forEach(l => {
+    const yy = y(l.price), col = FIB_COLORS[l.r];
+    const key = l.r === 0.618 || l.r === 0.382;
+    svg += `<line x1="${PAD.L}" y1="${yy.toFixed(1)}" x2="${W - PAD.R}" y2="${yy.toFixed(1)}" stroke="${col}" stroke-width="${key ? 1.4 : 1}" stroke-dasharray="${l.r === 0 || l.r === 1 ? "none" : "4 3"}"/>`;
+    svg += `<text x="${PAD.L - 6}" y="${(yy + 3).toFixed(1)}" font-size="10" fill="${col}" text-anchor="end">${fmtP(l.price)}</text>`;
+    svg += `<text x="${W - PAD.R - 2}" y="${(yy - 3).toFixed(1)}" font-size="10" fill="${col}" text-anchor="end" font-weight="${key ? 700 : 400}">${(l.r * 100).toFixed(1)}%</text>`;
+  });
+  const pts = view.map((r, i) => `${cx(i).toFixed(1)},${y(r.close).toFixed(1)}`).join(" ");
+  svg += `<polyline points="${pts}" fill="none" stroke="#dfe5ee" stroke-width="1.4"/>`;
+  svg += `<circle cx="${cx(fib.hiIdx).toFixed(1)}" cy="${y(fib.high).toFixed(1)}" r="4" fill="#ff5c5c"/>`;
+  svg += `<circle cx="${cx(fib.loIdx).toFixed(1)}" cy="${y(fib.low).toFixed(1)}" r="4" fill="#3ecf74"/>`;
+  svg += `<circle cx="${cx(n - 1).toFixed(1)}" cy="${y(fib.price).toFixed(1)}" r="4" fill="#5b9bff" stroke="#0f141c" stroke-width="1.5"/>`;
+  svg += xLabelsSvg(view.map(r => r.date), padT, plotH, plotW, step);
+  document.getElementById("fibChartDiv").innerHTML =
     `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" xmlns="${svgNS}">${svg}</svg>`;
 }
 
@@ -2345,7 +2454,8 @@ async function runAnalysis() {
     }
     const matches = resolveStock(query, list);
     if (matches.length === 0) {
-      setStatus(`找不到「${query}」對應的股票，請確認名稱是否正確，或改用代碼查詢`, "error");
+      // query 可能來自網址參數 ?stock=，一定要跳脫，否則別人傳來的連結就能在這頁執行程式、讀走 API Key
+      setStatus(`找不到「${esc(query)}」對應的股票，請確認名稱是否正確，或改用代碼查詢`, "error");
       btn.disabled = false;
       return;
     }
@@ -2353,8 +2463,8 @@ async function runAnalysis() {
     stockName = matches[0].stock_name;
     if (matches.length > 1) {
       setStatus(
-        `找到多筆符合「${query}」的股票，已選用第一筆：<b>${stockName}（${stockId}）</b>。若不是你要的，請直接輸入代碼查詢，其他候選：` +
-        matches.slice(0, 6).map(m => `${m.stock_name}（${m.stock_id}）`).join("、"),
+        `找到多筆符合「${esc(query)}」的股票，已選用第一筆：<b>${esc(stockName)}（${esc(stockId)}）</b>。若不是你要的，請直接輸入代碼查詢，其他候選：` +
+        matches.slice(0, 6).map(m => `${esc(m.stock_name)}（${esc(m.stock_id)}）`).join("、"),
         "info"
       );
     }
@@ -2457,12 +2567,17 @@ async function runAnalysis() {
       requestAnimationFrame(() => { wavePending = false; updateWave(priceRows, sname); });
     };
 
+    // 費波那契
+    updateFib(priceRows, sname);
+    document.getElementById("fibLookback").onchange = () => updateFib(priceRows, sname);
+
     // 手機轉橫／直向時依新寬度重畫圖表
     redrawCharts = () => {
       renderPriceChartSVG(priceRows, sname);
       renderFundamentalCharts();
       renderFxEval(fx, sname);
       updateWave(priceRows, sname);
+      updateFib(priceRows, sname);
     };
 
     document.getElementById("resultsArea").classList.remove("hidden");
@@ -2475,7 +2590,7 @@ async function runAnalysis() {
     const hint = isConnErr
       ? "無法連到 FinMind。請確認裝置目前有連上網路（公司網路／防火牆／防毒軟體有時會擋 api.finmindtrade.com），稍後再試一次。"
       : "FinMind 可能暫時無回應或當日免費額度已用完，請稍後再試。若持續失敗，可改用桌面版 Streamlit 工具。";
-    setStatus(`⚠️ 資料抓取失敗：${msg}。<br>${hint}`, "error");
+    setStatus(`⚠️ 資料抓取失敗：${esc(msg)}。<br>${hint}`, "error");
   } finally {
     btn.disabled = false;
   }
@@ -2493,6 +2608,40 @@ function updateWave(priceRows, sname) {
   } else {
     noteEl.innerHTML = `<div class="info-box">近期股價轉折段數不足或資料不足，暫無法標記波浪，可調高敏感度滑桿試試</div>`;
   }
+}
+
+function updateFib(priceRows, sname) {
+  const fib = calcFibonacci(priceRows, parseInt(document.getElementById("fibLookback").value, 10));
+  const noteEl = document.getElementById("fibNote"), tableEl = document.getElementById("fibTable");
+  if (!fib) {
+    document.getElementById("fibChartDiv").innerHTML = "";
+    tableEl.innerHTML = "";
+    noteEl.innerHTML = `<div class="info-box">區間內資料不足或價格沒有波動，無法計算費波那契價位</div>`;
+    return;
+  }
+  renderFibChartSVG(fib, sname);
+  const md = d => d.slice(5);
+  const nearTxt = fib.near ? `<br>📍 股價正位於 <b>${fib.near.kind} ${(fib.near.r * 100).toFixed(1)}%（${fmtP(fib.near.price)}）</b> 附近（差距 1% 內），留意這個價位的攻防。` : "";
+  noteEl.innerHTML =
+    `<div class="metric-grid">` +
+    metricHtml("波段方向", fib.up ? "上升波段" : "下跌波段", `${md(fib.up ? fib.loDate : fib.hiDate)} → ${md(fib.up ? fib.hiDate : fib.loDate)}`) +
+    metricHtml("波段高點／低點", `${fmtP(fib.high)}／${fmtP(fib.low)}`) +
+    metricHtml(fib.up ? "已回檔" : "已反彈", `${(fib.pos * 100).toFixed(1)}%`, `股價 ${fmtP(fib.price)}`) +
+    metricHtml("下方支撐／上方壓力",
+      `${fib.support ? fmtP(fib.support.price) : "—"}／${fib.resist ? fmtP(fib.resist.price) : "—"}`,
+      `${fib.support ? `${fib.support.kind}${(fib.support.r * 100).toFixed(1)}%` : "無"}／${fib.resist ? `${fib.resist.kind}${(fib.resist.r * 100).toFixed(1)}%` : "無"}`) +
+    `</div>` +
+    `<div class="verdict" style="background:${fib.color}18;border-color:${fib.color};color:${fib.color}">📐 ${fib.zone}</div>` +
+    `<div class="chip-box">${fib.text}${nearTxt}</div>`;
+
+  const rows = [...fib.levels, ...fib.exts].map(l => ({ ...l, cur: false }));
+  rows.push({ cur: true, price: fib.price });
+  rows.sort((a, b) => b.price - a.price);
+  tableEl.innerHTML = `<table class="data-table"><tr><th>價位</th><th>比例</th><th>價格</th><th>與股價差距</th></tr>` +
+    rows.map(l => l.cur
+      ? `<tr class="hl"><td>👉 目前股價</td><td>—</td><td><b>${fmtP(l.price)}</b></td><td>—</td></tr>`
+      : `<tr><td>${l.kind}${l.r === 0.618 ? " ★" : ""}</td><td>${(l.r * 100).toFixed(1)}%</td><td>${fmtP(l.price)}</td><td>${signed((l.price - fib.price) / fib.price * 100, 1)}%</td></tr>`
+    ).join("") + `</table>`;
 }
 
 let redrawCharts = null;
