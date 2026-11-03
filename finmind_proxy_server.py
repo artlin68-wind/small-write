@@ -48,6 +48,9 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
         query_string = urllib.parse.urlencode(params, doseq=True)
 
         target_url = f"{FINMIND_BASE}?{query_string}"
+        # log 不印出使用者的 token
+        log_url = f"{FINMIND_BASE}?" + urllib.parse.urlencode(
+            {k: (["***"] if k == "token" else v) for k, v in params.items()}, doseq=True)
         try:
             req = urllib.request.Request(
                 target_url,
@@ -56,17 +59,17 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
             with urllib.request.urlopen(req, timeout=15) as resp:
                 body = resp.read()
                 status = resp.status
-            sys.stderr.write(f"[proxy] {status} <- {target_url}\n")
+            sys.stderr.write(f"[proxy] {status} <- {log_url}\n")
         except urllib.error.HTTPError as e:
             status = e.code
             body = e.read() if e.fp else b'{"status":' + str(status).encode() + b',"data":[]}'
-            sys.stderr.write(f"[proxy] HTTP {status} <- {target_url}\n{body[:300]!r}\n")
+            sys.stderr.write(f"[proxy] HTTP {status} <- {log_url}\n{body[:300]!r}\n")
         except Exception as e:
             status = 502
             body = json.dumps(
                 {"status": 502, "msg": f"proxy error: {e}", "data": []}
             ).encode("utf-8")
-            sys.stderr.write(f"[proxy] EXCEPTION 連線 FinMind 失敗 <- {target_url}\n")
+            sys.stderr.write(f"[proxy] EXCEPTION 連線 FinMind 失敗 <- {log_url}\n")
             traceback.print_exc()
 
         self.send_response(status)

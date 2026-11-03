@@ -166,7 +166,12 @@
     </div>
     <div id="statusMsg"></div>
     <details class="fold" id="aiSettings">
-      <summary>🔑 AI 功能設定（選用：公司簡介、截圖解讀）</summary>
+      <summary>🔑 API 設定（選用：FinMind Token、AI 公司簡介與截圖解讀）</summary>
+      <div class="form-grid">
+        <label class="field"><span>FinMind Token（免費註冊）</span>
+          <input type="password" id="finmindTokenInput" autocomplete="off" placeholder="貼上 FinMind 的 API Token"></label>
+      </div>
+      <p class="caption">填了 Token，FinMind 的查詢次數上限會提高；不填也能用，只是次數比較少。Token 只存在這台裝置的瀏覽器裡，跟著查詢直接送到 FinMind。到 finmindtrade.com 登入後，在「使用者資訊」頁可以看到 Token。</p>
       <div class="form-grid">
         <label class="field"><span>Anthropic API Key</span>
           <input type="password" id="apiKeyInput" autocomplete="off" placeholder="sk-ant-..."></label>
@@ -438,6 +443,18 @@ const FINMIND_BASE = IS_LOCAL_PROXY ? "/api/finmind" : FINMIND_DIRECT;
 //  資料抓取
 // ══════════════════════════════════════════════════════════════
 
+// 使用者自己的 FinMind Token：存在瀏覽器，不寫進程式碼（repo 與網頁都是公開的）
+const FINMIND_TOKEN_STORE = "finmind_token";
+function finmindToken() {
+  const el = document.getElementById("finmindTokenInput");
+  return el ? el.value.trim() : "";
+}
+// 用網址參數帶 token（不用 Authorization 標頭），瀏覽器才不必多送一次 CORS 預檢請求
+function finmindUrl(query) {
+  const t = finmindToken();
+  return `${FINMIND_BASE}?${query}${t ? `&token=${encodeURIComponent(t)}` : ""}`;
+}
+
 async function finmindGet(dataset, dataId, days) {
   const start = new Date();
   start.setDate(start.getDate() - days);
@@ -446,10 +463,16 @@ async function finmindGet(dataset, dataId, days) {
 
 async function finmindGetFrom(dataset, dataId, startStr) {
   // FinMind v4 目前用 data_id 帶代碼；舊參數名 stock_id 會被回 HTTP 400
-  const url = `${FINMIND_BASE}?dataset=${dataset}&data_id=${dataId}&start_date=${startStr}`;
+  const url = finmindUrl(`dataset=${dataset}&data_id=${dataId}&start_date=${startStr}`);
   try {
     const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      // FinMind 會在 body 的 msg 說明原因（例如 Token 填錯回 400「Token is illegal」）
+      let msg = "";
+      try { msg = (await res.json()).msg || ""; } catch (e) { /* body 不是 JSON */ }
+      if (/token/i.test(msg)) throw new Error("FinMind Token 無效，請到「API 設定」確認是否貼錯，或清空改用免 Token 模式");
+      throw new Error(`HTTP ${res.status}${msg ? `（${msg}）` : ""}`);
+    }
     const json = await res.json();
     if (json.status === 200 && Array.isArray(json.data)) {
       return json.data;
@@ -542,7 +565,7 @@ async function fetchStockList() {
   const saved = loadStockListFromStorage();
   if (saved) return (stockListCache = saved);
   try {
-    const res = await fetch(`${FINMIND_BASE}?dataset=TaiwanStockInfo`);
+    const res = await fetch(finmindUrl("dataset=TaiwanStockInfo"));
     const json = await res.json();
     if (json.status === 200 && Array.isArray(json.data)) {
       stockListCache = json.data
@@ -2317,6 +2340,17 @@ try {
   }
 } catch (e) { /* 不支援分享就只留下載 */ }
 loadSavedApiKey();
+// FinMind Token：開頁時讀回，修改時存起來
+(function initFinmindToken() {
+  const el = document.getElementById("finmindTokenInput");
+  try { el.value = localStorage.getItem(FINMIND_TOKEN_STORE) || ""; } catch (e) { /* 私密瀏覽時存取不到 */ }
+  el.addEventListener("change", () => {
+    try {
+      const t = el.value.trim();
+      if (t) localStorage.setItem(FINMIND_TOKEN_STORE, t); else localStorage.removeItem(FINMIND_TOKEN_STORE);
+    } catch (e) { /* 存不進去仍可用於本次 */ }
+  });
+})();
 
 let recalcPending = false;
 ["input", "change"].forEach(type => document.addEventListener(type, e => {
