@@ -29,6 +29,20 @@ import traceback
 
 PORT = 8000
 FINMIND_BASE = "https://api.finmindtrade.com/api/v4/data"
+TOKEN_FILE = "finmind_token.txt"   # 只放本機（已列在 .gitignore）
+
+
+def read_token_file() -> str:
+    """每次請求都重讀，改了 Token 不必重開伺服器。忽略 # 註解行與尚未填寫的範例文字。"""
+    try:
+        with open(TOKEN_FILE, encoding="utf-8-sig") as f:
+            for line in f:
+                t = line.strip()
+                if t and not t.startswith("#") and t != "在這裡貼上Token":
+                    return t
+    except OSError:
+        pass
+    return ""
 
 
 class ProxyHandler(http.server.SimpleHTTPRequestHandler):
@@ -45,6 +59,11 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
         params = urllib.parse.parse_qs(query_string, keep_blank_values=True)
         if "stock_id" in params and "data_id" not in params:
             params["data_id"] = params.pop("stock_id")
+        # 網頁沒帶 token（沒在網頁上填）時，改用本機 finmind_token.txt 的 Token
+        if not params.get("token", [""])[0]:
+            file_token = read_token_file()
+            if file_token:
+                params["token"] = [file_token]
         query_string = urllib.parse.urlencode(params, doseq=True)
 
         target_url = f"{FINMIND_BASE}?{query_string}"

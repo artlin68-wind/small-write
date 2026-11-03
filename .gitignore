@@ -30,3 +30,6 @@ CLAUDE.md
 # 舊版本機檔案，不公開
 台股投資分析工具_v*.html
 _backup/
+
+# FinMind Token（只放本機，不公開）
+finmind_token.txt
