@@ -333,6 +333,17 @@
     </div>
 
     <div class="card">
+      <h2>💳 融資水位評估（個股＋大盤）</h2>
+      <p class="caption">融資是散戶借錢買股。融資水位越高，籌碼越凌亂，股價回檔時容易因追繳、斷頭引發多殺多。個股看「融資使用率」（融資餘額÷融資限額）、融資餘額在近半年的相對位置、券資比，以及近 20 個交易日融資與股價的同步／背離；大盤看全市場融資餘額與加權指數的關係。固定規則計算，僅供參考。</p>
+      <h3>個股融資水位</h3>
+      <div class="chart-wrap"><div id="marginLvChartDiv"></div></div>
+      <div id="marginLvNote"></div>
+      <h3>大盤與融資水位的關係</h3>
+      <div class="chart-wrap"><div id="mktMarginChartDiv"></div></div>
+      <div id="mktMarginNote"></div>
+    </div>
+
+    <div class="card">
       <h2>💱 新台幣兌美元匯率關聯</h2>
       <p class="caption">以即期匯率（USD/TWD）與本股收盤價比對，計算近期相關係數，輔助判斷本股對匯率的敏感度。台股權值多為出口／電子股，通常新台幣走貶（美元走強）時較有利。此為統計關聯，非因果保證。</p>
       <div class="chart-wrap"><div id="fxDiv"></div></div>
@@ -509,12 +520,37 @@ async function fetchInstitutional(stockId, days = 40) {
   }));
 }
 
-async function fetchMargin(stockId, days = 40) {
+// balance／limit／short 單位皆為張；limit 為 0 代表該股不能融資（或無限額資料）
+async function fetchMargin(stockId, days = 200) {
   const data = await finmindGet("TaiwanStockMarginPurchaseShortSale", stockId, days);
   return data
-    .map(r => ({ date: r.date, balance: Number(r.MarginPurchaseTodayBalance) }))
+    .map(r => ({
+      date: r.date,
+      balance: Number(r.MarginPurchaseTodayBalance),
+      limit: Number(r.MarginPurchaseLimit) || 0,
+      short: Number(r.ShortSaleTodayBalance) || 0,
+    }))
     .filter(r => !isNaN(r.balance))
     .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// 全市場融資餘額（億元）＋加權指數收盤。兩者都是全市場資料，同一天內只抓一次
+let marketMarginCache = null;
+async function fetchMarketMargin(days = 200) {
+  const day = new Date().toDateString();
+  if (marketMarginCache && marketMarginCache.day === day) return marketMarginCache.rows;
+  const [mkt, idx] = await Promise.all([
+    finmindGet("TaiwanStockTotalMarginPurchaseShortSale", "", days),
+    finmindGet("TaiwanStockPrice", "TAIEX", days),
+  ]);
+  const closeByDate = new Map(idx.map(r => [r.date, Number(r.close)]));
+  const rows = mkt
+    .filter(r => r.name === "MarginPurchaseMoney")
+    .map(r => ({ date: r.date, money: Number(r.TodayBalance) / 1e8, index: closeByDate.get(r.date) }))
+    .filter(r => r.money > 0 && r.index > 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (rows.length) marketMarginCache = { day, rows };
+  return rows;
 }
 
 async function fetchDayTrading(stockId, days = 40) {
@@ -1006,6 +1042,112 @@ function calcFibonacci(priceRows, lookback) {
 }
 
 // ══════════════════════════════════════════════════════════════
+//  融資水位評估（個股＋大盤）
+// ══════════════════════════════════════════════════════════════
+
+const MARGIN_RANGE_N = 120;   // 相對位置的比較區間：約半年交易日
+const MARGIN_CHG_N = 20;      // 融資與股價／指數同步關係的比較天數
+
+const pctChg = (now, ref) => ref ? (now - ref) / ref * 100 : null;
+// 區間位置：0＝區間最低、1＝區間最高
+function rangePos(vals, v) {
+  const max = Math.max(...vals), min = Math.min(...vals);
+  return max > min ? (v - min) / (max - min) : 0.5;
+}
+
+function calcMarginLevel(marginRows, priceRows) {
+  if (marginRows.length < MARGIN_CHG_N + 1) return null;
+  const view = marginRows.slice(-MARGIN_RANGE_N);
+  const last = lastOf(marginRows);
+  const ref = marginRows[marginRows.length - 1 - MARGIN_CHG_N];
+  const usage = last.limit > 0 ? last.balance / last.limit * 100 : null;
+  const pos = rangePos(view.map(r => r.balance), last.balance);
+  const shortRatio = last.balance > 0 ? last.short / last.balance * 100 : null;
+  const marginChg = pctChg(last.balance, ref.balance);
+  // 融資資料通常比股價晚一天公布，股價用相同日期比對才不會錯位
+  const closeByDate = new Map(priceRows.map(r => [r.date, r.close]));
+  const pNow = closeByDate.get(last.date), pRef = closeByDate.get(ref.date);
+  const priceChg = pNow && pRef ? pctChg(pNow, pRef) : null;
+
+  let level, color, text;
+  const usageTxt = usage !== null ? `融資使用率 ${usage.toFixed(1)}%` : "本股無融資限額資料";
+  const posTxt = `融資餘額位於近半年區間的 ${(pos * 100).toFixed(0)}% 位置`;
+  if (usage !== null && usage >= 60) {
+    level = "融資水位過高"; color = "#ff5c5c";
+    text = `${usageTxt}，已超過 6 成；${posTxt}。籌碼大量集中在散戶融資手上，股價一旦轉弱，容易因追繳、斷頭引發多殺多，追高風險大。`;
+  } else if ((usage !== null && usage >= 40) || pos >= 0.85) {
+    level = "融資水位偏高"; color = "#f39c4a";
+    const why = [];
+    if (usage !== null && usage >= 40) why.push(`${usageTxt} 偏高`);
+    if (pos >= 0.85) why.push(`融資餘額接近近半年高點（區間位置 ${(pos * 100).toFixed(0)}%）`);
+    text = `${why.join("，")}。散戶槓桿持續堆高，上檔解套賣壓與回檔時的斷頭風險都在增加，宜控制部位、不追高。`;
+  } else if ((usage === null || usage < 20) && pos <= 0.25) {
+    level = "融資水位偏低"; color = "#3ecf74";
+    text = `${usageTxt}；${posTxt}，處於低檔。融資籌碼相對乾淨，上檔散戶賣壓較輕，若有法人買盤推升，較不易被融資拖累。`;
+  } else {
+    level = "融資水位中性"; color = "#8fb4ff";
+    text = `${usageTxt}；${posTxt}。融資水位不高不低，需搭配融資與股價的同步關係判斷。`;
+  }
+  if (usage !== null && usage < 5) text += `（大型權值股融資限額很大，使用率通常偏低，請以區間位置與增減方向為主要參考）`;
+
+  const rel = marginPriceRelation(marginChg, priceChg, "股價", "散戶");
+  let shortNote = "";
+  if (shortRatio !== null && shortRatio >= 30) shortNote = `券資比 ${shortRatio.toFixed(1)}% 偏高，空單回補時可能形成軋空助漲力道，但也代表看空的人不少。`;
+
+  return { last, ref, usage, pos, shortRatio, marginChg, priceChg, level, color, text, rel, shortNote, view };
+}
+
+// 融資與價格（股價或指數）在同一期間的同步／背離關係
+function marginPriceRelation(mc, pc, priceName, who) {
+  if (mc === null || pc === null) return { icon: "❔", text: `${priceName}資料不足，無法比對融資與${priceName}的關係` };
+  const m = `融資 ${signed(mc, 1)}%`, p = `${priceName} ${signed(pc, 1)}%`;
+  const mUp = mc >= 3, mDown = mc <= -3, pUp = pc >= 3, pDown = pc <= -3;
+  if (pUp && mUp) {
+    return mc > pc + 3
+      ? { icon: "⚠️", text: `價漲資增、融資增速大於漲幅（${p}、${m}）：${who}追價情緒升溫，籌碼轉向散戶，留意短線過熱。` }
+      : { icon: "➡️", text: `價漲資增（${p}、${m}）：${who}跟進但增速未超過漲幅，屬正常的多頭跟風，持續觀察融資是否加速堆高。` };
+  }
+  if (pUp) return mDown
+    ? { icon: "✅", text: `價漲資減（${p}、${m}）：融資退場${priceName}仍上漲，籌碼由散戶轉往法人／大戶，上漲結構較健康。` }
+    : { icon: "✅", text: `價漲、融資持平（${p}、${m}）：上漲不是靠${who}融資推升，籌碼相對安定。` };
+  if (pDown) {
+    if (mUp) return { icon: "🔴", text: `價跌資增（${p}、${m}）：${priceName}下跌但融資逆勢增加，${who}攤平接刀、融資沒有洗清，後續仍有斷頭賣壓風險。` };
+    if (mc <= -10) return { icon: "✅", text: `價跌資大減（${p}、${m}）：融資大量退場（可能包含斷頭），籌碼明顯沉澱，常見於修正後段，可留意止跌訊號。` };
+    if (mDown && mc > pc / 2) return { icon: "⚠️", text: `價跌資減但退場偏慢（${p}、${m}）：融資減幅不到跌幅的一半，融資沒有跟著洗清，賣壓還沒消化完。` };
+    if (mDown) return { icon: "➡️", text: `價跌資減（${p}、${m}）：融資隨${priceName}下跌退場，籌碼逐步沉澱，等止跌訊號再觀察。` };
+    return { icon: "⚠️", text: `價跌、融資未退（${p}、${m}）：${priceName}已回檔但融資幾乎沒減，潛在賣壓尚未消化。` };
+  }
+  if (mUp) return { icon: "⚠️", text: `盤整中融資增加（${p}、${m}）：${priceName}沒漲但融資在堆高，槓桿上升，留意突破失敗時的賣壓。` };
+  if (mDown) return { icon: "✅", text: `盤整中融資減少（${p}、${m}）：籌碼在整理期間逐步沉澱，對後續走勢較有利。` };
+  return { icon: "➡️", text: `融資與${priceName}變化都不大（${p}、${m}），沒有明顯的同步或背離。` };
+}
+
+function calcMarketMargin(rows) {
+  if (rows.length < MARGIN_CHG_N + 1) return null;
+  const view = rows.slice(-MARGIN_RANGE_N);
+  const last = lastOf(rows), ref = rows[rows.length - 1 - MARGIN_CHG_N];
+  const marginChg = pctChg(last.money, ref.money), indexChg = pctChg(last.index, ref.index);
+  const pos = rangePos(view.map(r => r.money), last.money);
+  const idxPos = rangePos(view.map(r => r.index), last.index);
+  const rel = marginPriceRelation(marginChg, indexChg, "加權指數", "市場散戶");
+
+  let level, color, text;
+  const posTxt = `全市場融資餘額 ${Math.round(last.money).toLocaleString()} 億元，位於近半年區間的 ${(pos * 100).toFixed(0)}% 位置`;
+  if (pos >= 0.85) {
+    level = "大盤融資水位偏高"; color = "#f39c4a";
+    text = `${posTxt}，接近半年高點，市場整體槓桿偏高。指數一旦急跌，容易因融資追繳引發連鎖賣壓，個股也難獨善其身。`;
+    if (idxPos < 0.6) { level = "大盤融資高、指數未跟上"; color = "#ff5c5c"; text += `而且指數只在區間 ${(idxPos * 100).toFixed(0)}% 位置，融資堆高卻沒有推升指數，屬背離警訊。`; }
+  } else if (pos <= 0.2) {
+    level = "大盤融資水位偏低"; color = "#3ecf74";
+    text = `${posTxt}，處於低檔，市場槓桿已明顯降溫，散戶籌碼較乾淨，大盤下檔的融資斷頭壓力較小。`;
+  } else {
+    level = "大盤融資水位中性"; color = "#8fb4ff";
+    text = `${posTxt}，槓桿水位不算極端，以融資與指數的同步關係為主要觀察重點。`;
+  }
+  return { last, ref, marginChg, indexChg, pos, idxPos, level, color, text, rel, view };
+}
+
+// ══════════════════════════════════════════════════════════════
 //  SVG 繪圖工具（自製，不依賴外部函式庫）
 // ══════════════════════════════════════════════════════════════
 
@@ -1291,6 +1433,41 @@ function renderFibChartSVG(fib, sname) {
   svg += `<circle cx="${cx(n - 1).toFixed(1)}" cy="${y(fib.price).toFixed(1)}" r="4" fill="#5b9bff" stroke="#0f141c" stroke-width="1.5"/>`;
   svg += xLabelsSvg(view.map(r => r.date), padT, plotH, plotW, step);
   document.getElementById("fibChartDiv").innerHTML =
+    `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" xmlns="${svgNS}">${svg}</svg>`;
+}
+
+// 雙軸折線：a 用左軸、b 用右軸（例如股價 vs 融資餘額）
+function renderDualLineSVG(elId, dates, a, b, title, aLabel, bLabel, fmtA, fmtB) {
+  const W = chartW(), H = chartH(300), padT = 48, padB = 22, padR = 58;
+  const n = dates.length, plotW = W - PAD.L - padR, plotH = H - padT - padB, step = plotW / n;
+  const cx = i => PAD.L + step * (i + 0.5);
+  const scale = vals => {
+    const v = vals.filter(Number.isFinite);
+    let lo = Math.min(...v), hi = Math.max(...v);
+    const pad = (hi - lo) * 0.08 || Math.abs(hi) * 0.02 || 1;
+    lo -= pad; hi += pad;
+    return { lo, hi, y: x => padT + (1 - (x - lo) / (hi - lo)) * plotH };
+  };
+  const A = scale(a), B = scale(b);
+  const colA = "#dfe5ee", colB = "#f39c12";
+  let svg = `<text x="${W / 2}" y="18" font-size="${titleFs(W)}" fill="#8fb4ff" text-anchor="middle" font-weight="700">${esc(title)}</text>`;
+  svg += `<text x="${PAD.L}" y="36" font-size="11" fill="${colA}">━ ${esc(aLabel)}（左軸）</text>`;
+  svg += `<text x="${W - padR}" y="36" font-size="11" fill="${colB}" text-anchor="end">━ ${esc(bLabel)}（右軸）</text>`;
+  niceTicks(A.lo, A.hi, 4).forEach(t => {
+    const yy = A.y(t).toFixed(1);
+    svg += `<line x1="${PAD.L}" y1="${yy}" x2="${W - padR}" y2="${yy}" stroke="#2a3442" stroke-width="1"/>`;
+    svg += `<text x="${PAD.L - 6}" y="${(+yy + 3).toFixed(1)}" font-size="10" fill="#a3adbd" text-anchor="end">${fmtA(t)}</text>`;
+  });
+  niceTicks(B.lo, B.hi, 4).forEach(t => {
+    svg += `<text x="${W - padR + 6}" y="${(B.y(t) + 3).toFixed(1)}" font-size="10" fill="${colB}">${fmtB(t)}</text>`;
+  });
+  const line = (vals, S, col, w) => {
+    const pts = vals.map((v, i) => Number.isFinite(v) ? `${cx(i).toFixed(1)},${S.y(v).toFixed(1)}` : null).filter(Boolean).join(" ");
+    return `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="${w}"/>`;
+  };
+  svg += line(b, B, colB, 1.8) + line(a, A, colA, 1.4);
+  svg += xLabelsSvg(dates, padT, plotH, plotW, step);
+  document.getElementById(elId).innerHTML =
     `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" xmlns="${svgNS}">${svg}</svg>`;
 }
 
@@ -2509,15 +2686,17 @@ async function runAnalysis() {
 
   try {
     // 若是用代碼查詢（尚未取得名稱），順便並行抓股票清單以補上公司名稱，讓標題一律顯示「名稱（代碼）」
-    const [priceRows, instRows, marginRows, dtRows, fxRows, stockList, fundData, official] = await Promise.all([
+    const [priceRows, instRows, marginRows, dtRows, fxRows, stockList, fundData, official, mktMarginRows] = await Promise.all([
       fetchPriceHistory(stockId, 130),
       fetchInstitutional(stockId, 40),
-      fetchMargin(stockId, 40),
+      fetchMargin(stockId, 200),
       fetchDayTrading(stockId, 40),
       fetchExchangeRate(130),
       fetchStockList().catch(() => []),
       fetchFundamentals(stockId),
       fetchOfficialProfile(stockId),
+      // 大盤融資只是輔助資訊，抓不到不影響其他分析
+      fetchMarketMargin(200).catch(e => { console.error("抓取大盤融資失敗：", e); return []; }),
     ]);
 
     // 股票清單一天只抓一次（存在瀏覽器），順便補上公司名稱與產業別
@@ -2587,6 +2766,11 @@ async function runAnalysis() {
     // 法人分項 + 信用當沖數量
     renderInstBreakdown(instBreakdown, dtSig);
 
+    // 融資水位（個股＋大盤）
+    const marginLv = calcMarginLevel(marginRows, priceRows);
+    const mktMargin = calcMarketMargin(mktMarginRows);
+    renderMarginLevel(marginLv, mktMargin, priceRows, sname);
+
     // 匯率關聯
     renderFxEval(fx, sname);
 
@@ -2610,6 +2794,7 @@ async function runAnalysis() {
       renderPriceChartSVG(priceRows, sname);
       renderFundamentalCharts();
       renderFxEval(fx, sname);
+      renderMarginLevel(marginLv, mktMargin, priceRows, sname);
       updateWave(priceRows, sname);
       updateFib(priceRows, sname);
     };
@@ -2642,6 +2827,66 @@ function updateWave(priceRows, sname) {
   } else {
     noteEl.innerHTML = `<div class="info-box">近期股價轉折段數不足或資料不足，暫無法標記波浪，可調高敏感度滑桿試試</div>`;
   }
+}
+
+function renderMarginLevel(lv, mkt, priceRows, sname) {
+  const lotFmt = v => Math.round(v).toLocaleString();
+  const verdict = (o, icon) => `<div class="verdict" style="background:${o.color}18;border-color:${o.color};color:${o.color}">${icon} ${o.level}</div>`;
+  const relHtml = r => `<div class="item-row">${r.icon} ${r.text}</div>`;
+
+  const stockChart = document.getElementById("marginLvChartDiv"), stockNote = document.getElementById("marginLvNote");
+  if (!lv) {
+    stockChart.innerHTML = "";
+    stockNote.innerHTML = `<div class="info-box">融資資料不足（可能為不能融資的股票，或近期無資料），無法評估個股融資水位</div>`;
+  } else {
+    // 股價只抓約 90 個交易日，圖只畫兩者都有資料的日期（半年區間位置仍用完整融資資料計算）
+    const closeByDate = new Map(priceRows.map(r => [r.date, r.close]));
+    const both = lv.view.filter(r => closeByDate.has(r.date));
+    renderDualLineSVG("marginLvChartDiv", both.map(r => r.date),
+      both.map(r => closeByDate.get(r.date)), both.map(r => r.balance),
+      `${sname} 股價 vs 融資餘額（近 ${both.length} 個交易日）`, "收盤價", "融資餘額（張）", fmtNum, fmtNum);
+    stockNote.innerHTML =
+      `<div class="metric-grid">` +
+      metricHtml("融資餘額", `${lotFmt(lv.last.balance)} 張`, `資料日 ${lv.last.date.slice(5)}`) +
+      metricHtml("融資使用率", lv.usage !== null ? `${lv.usage.toFixed(1)}%` : "—", lv.usage !== null ? `限額 ${lotFmt(lv.last.limit)} 張` : "無限額資料") +
+      metricHtml("近半年區間位置", `${(lv.pos * 100).toFixed(0)}%`, "0%＝半年最低、100%＝最高") +
+      metricHtml("券資比", lv.shortRatio !== null ? `${lv.shortRatio.toFixed(1)}%` : "—", `融券 ${lotFmt(lv.last.short)} 張`) +
+      `</div>` +
+      verdict(lv, "💳") +
+      `<div class="chip-box">${lv.text}</div>` +
+      `<div class="item-row"><b>近 ${MARGIN_CHG_N} 個交易日融資 vs 股價：</b></div>` + relHtml(lv.rel) +
+      (lv.shortNote ? `<div class="item-row">🔁 ${lv.shortNote}</div>` : "");
+  }
+
+  const mktChart = document.getElementById("mktMarginChartDiv"), mktNote = document.getElementById("mktMarginNote");
+  if (!mkt) {
+    mktChart.innerHTML = "";
+    mktNote.innerHTML = `<div class="info-box">大盤融資資料暫時抓不到（可能是 FinMind 免費額度用完），稍後再試</div>`;
+    return;
+  }
+  renderDualLineSVG("mktMarginChartDiv", mkt.view.map(r => r.date),
+    mkt.view.map(r => r.index), mkt.view.map(r => r.money),
+    "加權指數 vs 全市場融資餘額（近半年）", "加權指數", "融資餘額（億元）", v => v.toFixed(0), v => v.toFixed(0));
+  // 個股融資增速與大盤比較：看散戶對這檔的槓桿偏好是否高於整體市場
+  let vsTxt = "";
+  if (lv && lv.marginChg !== null && mkt.marginChg !== null) {
+    const diff = lv.marginChg - mkt.marginChg;
+    const judge = diff >= 10 ? "明顯高於大盤，散戶槓桿集中在這檔，要留意籌碼凌亂"
+      : diff <= -10 ? "明顯低於大盤，這檔的融資相對退場，籌碼比大盤乾淨"
+      : "與大盤相近";
+    vsTxt = `<div class="item-row">📊 本股融資 ${MARGIN_CHG_N} 日 ${signed(lv.marginChg, 1)}%，全市場融資 ${signed(mkt.marginChg, 1)}%：${judge}。</div>`;
+  }
+  mktNote.innerHTML =
+    `<div class="metric-grid">` +
+    metricHtml("全市場融資餘額", `${Math.round(mkt.last.money).toLocaleString()} 億`, `資料日 ${mkt.last.date.slice(5)}`) +
+    metricHtml(`融資 ${MARGIN_CHG_N} 日變化`, `${signed(mkt.marginChg, 1)}%`, `${Math.round(mkt.ref.money).toLocaleString()} → ${Math.round(mkt.last.money).toLocaleString()} 億`) +
+    metricHtml(`加權指數 ${MARGIN_CHG_N} 日變化`, `${signed(mkt.indexChg, 1)}%`, `${mkt.ref.index.toFixed(0)} → ${mkt.last.index.toFixed(0)}`) +
+    metricHtml("融資半年區間位置", `${(mkt.pos * 100).toFixed(0)}%`, `指數位置 ${(mkt.idxPos * 100).toFixed(0)}%`) +
+    `</div>` +
+    verdict(mkt, "🏛️") +
+    `<div class="chip-box">${mkt.text}</div>` +
+    `<div class="item-row"><b>近 ${MARGIN_CHG_N} 個交易日融資 vs 加權指數：</b></div>` + relHtml(mkt.rel) + vsTxt +
+    `<p class="caption">大盤融資維持率（斷頭警戒線約 130%）需 FinMind 付費會員，這裡改用融資餘額的水位與增減判斷。</p>`;
 }
 
 function updateFib(priceRows, sname) {

@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 import base64
 import math
 import json
+from pathlib import Path
 
 # ══════════════════════════════════════════════════════════════════
 #  PAGE CONFIG
@@ -31,6 +32,25 @@ st.set_page_config(
 # ══════════════════════════════════════════════════════════════════
 FINMIND_BASE = "https://api.finmindtrade.com/api/v4/data"
 BUDGET = 1_000_000  # 100萬台幣
+PROJECT_ENV = Path(__file__).resolve().parent.parent / ".env"
+
+
+def read_project_env(name: str) -> str:
+    """從專案根目錄的 .env 讀取設定值（格式：KEY=value，# 開頭為註解）。"""
+    try:
+        lines = PROJECT_ENV.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ""
+    for line in lines:
+        line = line.strip()
+        if line.startswith("export "):
+            line = line[len("export "):].lstrip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        if key.strip() == name:
+            return value.strip().strip('"').strip("'")
+    return ""
 
 # ══════════════════════════════════════════════════════════════════
 #  CSS
@@ -257,6 +277,30 @@ def fetch_margin_data(stock_id: str, days: int = 40) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=3_600, show_spinner=False)
+def fetch_market_margin(days: int = 200) -> pd.DataFrame:
+    """全市場融資餘額（億元）＋加權指數收盤，來源：台灣證交所（經 FinMind 彙整）"""
+    try:
+        start = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        m = requests.get(f"{FINMIND_BASE}?dataset=TaiwanStockTotalMarginPurchaseShortSale"
+                         f"&start_date={start}", timeout=20).json()
+        i = requests.get(f"{FINMIND_BASE}?dataset=TaiwanStockPrice&data_id=TAIEX"
+                         f"&start_date={start}", timeout=20).json()
+        if m.get("status") == 200 and m["data"] and i.get("status") == 200 and i["data"]:
+            mdf = pd.DataFrame(m["data"])
+            mdf = mdf[mdf["name"] == "MarginPurchaseMoney"][["date", "TodayBalance"]]
+            mdf["money"] = pd.to_numeric(mdf["TodayBalance"], errors="coerce") / 1e8
+            idf = pd.DataFrame(i["data"])[["date", "close"]].rename(columns={"close": "index"})
+            idf["index"] = pd.to_numeric(idf["index"], errors="coerce")
+            df = mdf[["date", "money"]].merge(idf, on="date").dropna()
+            df = df[(df["money"] > 0) & (df["index"] > 0)]
+            df["date"] = pd.to_datetime(df["date"])
+            return df.sort_values("date").reset_index(drop=True)
+    except Exception:
+        pass
+    return pd.DataFrame()
+
+
+@st.cache_data(ttl=3_600, show_spinner=False)
 def fetch_institutional_data(stock_id: str, days: int = 40) -> pd.DataFrame:
     """三大法人（外資／投信／自營商）買賣超，來源：台灣證交所公開交易資訊（經 FinMind 彙整）"""
     try:
@@ -422,6 +466,155 @@ def calc_margin_signal(margin_df: pd.DataFrame, price_df: pd.DataFrame) -> dict 
 
     return {"margin_chg_pct": margin_chg_pct, "price_chg_pct": price_chg_pct,
             "margin_balance": bal_now}
+
+
+MARGIN_RANGE_N = 120   # 相對位置的比較區間：約半年交易日
+MARGIN_CHG_N = 20      # 融資與股價／指數同步關係的比較天數
+
+
+def _pct_chg(now, ref):
+    return (now - ref) / ref * 100 if ref else None
+
+
+def _range_pos(vals: pd.Series, v: float) -> float:
+    """區間位置：0＝區間最低、1＝區間最高"""
+    lo, hi = float(vals.min()), float(vals.max())
+    return (v - lo) / (hi - lo) if hi > lo else 0.5
+
+
+def margin_price_relation(mc, pc, price_name: str, who: str) -> tuple[str, str]:
+    """融資與價格（股價或指數）在同一期間的同步／背離關係"""
+    if mc is None or pc is None:
+        return "❔", f"{price_name}資料不足，無法比對融資與{price_name}的關係"
+    m, p = f"融資 {mc:+.1f}%", f"{price_name} {pc:+.1f}%"
+    m_up, m_down, p_up, p_down = mc >= 3, mc <= -3, pc >= 3, pc <= -3
+    if p_up and m_up:
+        if mc > pc + 3:
+            return "⚠️", f"價漲資增、融資增速大於漲幅（{p}、{m}）：{who}追價情緒升溫，籌碼轉向散戶，留意短線過熱。"
+        return "➡️", f"價漲資增（{p}、{m}）：{who}跟進但增速未超過漲幅，屬正常的多頭跟風，持續觀察融資是否加速堆高。"
+    if p_up:
+        if m_down:
+            return "✅", f"價漲資減（{p}、{m}）：融資退場{price_name}仍上漲，籌碼由散戶轉往法人／大戶，上漲結構較健康。"
+        return "✅", f"價漲、融資持平（{p}、{m}）：上漲不是靠{who}融資推升，籌碼相對安定。"
+    if p_down:
+        if m_up:
+            return "🔴", f"價跌資增（{p}、{m}）：{price_name}下跌但融資逆勢增加，{who}攤平接刀、融資沒有洗清，後續仍有斷頭賣壓風險。"
+        if mc <= -10:
+            return "✅", f"價跌資大減（{p}、{m}）：融資大量退場（可能包含斷頭），籌碼明顯沉澱，常見於修正後段，可留意止跌訊號。"
+        if m_down and mc > pc / 2:
+            return "⚠️", f"價跌資減但退場偏慢（{p}、{m}）：融資減幅不到跌幅的一半，融資沒有跟著洗清，賣壓還沒消化完。"
+        if m_down:
+            return "➡️", f"價跌資減（{p}、{m}）：融資隨{price_name}下跌退場，籌碼逐步沉澱，等止跌訊號再觀察。"
+        return "⚠️", f"價跌、融資未退（{p}、{m}）：{price_name}已回檔但融資幾乎沒減，潛在賣壓尚未消化。"
+    if m_up:
+        return "⚠️", f"盤整中融資增加（{p}、{m}）：{price_name}沒漲但融資在堆高，槓桿上升，留意突破失敗時的賣壓。"
+    if m_down:
+        return "✅", f"盤整中融資減少（{p}、{m}）：籌碼在整理期間逐步沉澱，對後續走勢較有利。"
+    return "➡️", f"融資與{price_name}變化都不大（{p}、{m}），沒有明顯的同步或背離。"
+
+
+def calc_margin_level(margin_df: pd.DataFrame, price_df: pd.DataFrame) -> dict | None:
+    """個股融資水位：融資使用率、近半年區間位置、券資比、近20日融資與股價關係"""
+    if margin_df.empty or "MarginPurchaseTodayBalance" not in margin_df.columns:
+        return None
+    m = margin_df.sort_values("date").dropna(subset=["MarginPurchaseTodayBalance"]).reset_index(drop=True)
+    if len(m) < MARGIN_CHG_N + 1:
+        return None
+    view = m.tail(MARGIN_RANGE_N)
+    last, ref = m.iloc[-1], m.iloc[-1 - MARGIN_CHG_N]
+    bal = float(last["MarginPurchaseTodayBalance"])
+    limit = float(last.get("MarginPurchaseLimit") or 0)
+    short = float(last.get("ShortSaleTodayBalance") or 0)
+    usage = bal / limit * 100 if limit > 0 else None
+    pos = _range_pos(view["MarginPurchaseTodayBalance"], bal)
+    short_ratio = short / bal * 100 if bal > 0 else None
+    margin_chg = _pct_chg(bal, float(ref["MarginPurchaseTodayBalance"]))
+    # 融資資料通常比股價晚一天公布，股價用相同日期比對才不會錯位
+    price_chg = None
+    if not price_df.empty:
+        close = price_df.set_index("date")["close"]
+        if last["date"] in close.index and ref["date"] in close.index:
+            price_chg = _pct_chg(float(close[last["date"]]), float(close[ref["date"]]))
+
+    usage_txt = f"融資使用率 {usage:.1f}%" if usage is not None else "本股無融資限額資料"
+    pos_txt = f"融資餘額位於近半年區間的 {pos * 100:.0f}% 位置"
+    if usage is not None and usage >= 60:
+        level, color = "融資水位過高", "#e74c3c"
+        text = f"{usage_txt}，已超過 6 成；{pos_txt}。籌碼大量集中在散戶融資手上，股價一旦轉弱，容易因追繳、斷頭引發多殺多，追高風險大。"
+    elif (usage is not None and usage >= 40) or pos >= 0.85:
+        level, color = "融資水位偏高", "#e67e22"
+        why = []
+        if usage is not None and usage >= 40:
+            why.append(f"{usage_txt} 偏高")
+        if pos >= 0.85:
+            why.append(f"融資餘額接近近半年高點（區間位置 {pos * 100:.0f}%）")
+        text = "，".join(why) + "。散戶槓桿持續堆高，上檔解套賣壓與回檔時的斷頭風險都在增加，宜控制部位、不追高。"
+    elif (usage is None or usage < 20) and pos <= 0.25:
+        level, color = "融資水位偏低", "#27ae60"
+        text = f"{usage_txt}；{pos_txt}，處於低檔。融資籌碼相對乾淨，上檔散戶賣壓較輕，若有法人買盤推升，較不易被融資拖累。"
+    else:
+        level, color = "融資水位中性", "#2e86c1"
+        text = f"{usage_txt}；{pos_txt}。融資水位不高不低，需搭配融資與股價的同步關係判斷。"
+    if usage is not None and usage < 5:
+        text += "（大型權值股融資限額很大，使用率通常偏低，請以區間位置與增減方向為主要參考）"
+
+    short_note = ""
+    if short_ratio is not None and short_ratio >= 30:
+        short_note = f"券資比 {short_ratio:.1f}% 偏高，空單回補時可能形成軋空助漲力道，但也代表看空的人不少。"
+    return {
+        "date": last["date"], "balance": bal, "limit": limit, "short": short,
+        "usage": usage, "pos": pos, "short_ratio": short_ratio,
+        "margin_chg": margin_chg, "price_chg": price_chg,
+        "level": level, "color": color, "text": text, "short_note": short_note,
+        "rel": margin_price_relation(margin_chg, price_chg, "股價", "散戶"), "view": view,
+    }
+
+
+def calc_market_margin(df: pd.DataFrame) -> dict | None:
+    """大盤融資水位：全市場融資餘額近半年位置，與加權指數近20日的同步／背離"""
+    if df.empty or len(df) < MARGIN_CHG_N + 1:
+        return None
+    view = df.tail(MARGIN_RANGE_N)
+    last, ref = df.iloc[-1], df.iloc[-1 - MARGIN_CHG_N]
+    margin_chg = _pct_chg(float(last["money"]), float(ref["money"]))
+    index_chg = _pct_chg(float(last["index"]), float(ref["index"]))
+    pos = _range_pos(view["money"], float(last["money"]))
+    idx_pos = _range_pos(view["index"], float(last["index"]))
+
+    pos_txt = f"全市場融資餘額 {last['money']:,.0f} 億元，位於近半年區間的 {pos * 100:.0f}% 位置"
+    if pos >= 0.85:
+        level, color = "大盤融資水位偏高", "#e67e22"
+        text = f"{pos_txt}，接近半年高點，市場整體槓桿偏高。指數一旦急跌，容易因融資追繳引發連鎖賣壓，個股也難獨善其身。"
+        if idx_pos < 0.6:
+            level, color = "大盤融資高、指數未跟上", "#e74c3c"
+            text += f"而且指數只在區間 {idx_pos * 100:.0f}% 位置，融資堆高卻沒有推升指數，屬背離警訊。"
+    elif pos <= 0.2:
+        level, color = "大盤融資水位偏低", "#27ae60"
+        text = f"{pos_txt}，處於低檔，市場槓桿已明顯降溫，散戶籌碼較乾淨，大盤下檔的融資斷頭壓力較小。"
+    else:
+        level, color = "大盤融資水位中性", "#2e86c1"
+        text = f"{pos_txt}，槓桿水位不算極端，以融資與指數的同步關係為主要觀察重點。"
+    return {
+        "date": last["date"], "money": float(last["money"]), "ref_money": float(ref["money"]),
+        "index": float(last["index"]), "ref_index": float(ref["index"]),
+        "margin_chg": margin_chg, "index_chg": index_chg, "pos": pos, "idx_pos": idx_pos,
+        "level": level, "color": color, "text": text,
+        "rel": margin_price_relation(margin_chg, index_chg, "加權指數", "市場散戶"), "view": view,
+    }
+
+
+def dual_axis_fig(dates, a, b, title: str, a_name: str, b_name: str) -> go.Figure:
+    """雙軸折線：a 用左軸、b 用右軸"""
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=dates, y=a, name=a_name, mode="lines", line=dict(color="#555", width=1.4)))
+    fig.add_trace(go.Scatter(x=dates, y=b, name=b_name, mode="lines", yaxis="y2",
+                             line=dict(color="#f39c12", width=2)))
+    fig.update_layout(height=320, plot_bgcolor="white", paper_bgcolor="white", title=title,
+                      margin=dict(t=50, b=20),
+                      yaxis=dict(title=a_name),
+                      yaxis2=dict(title=b_name, overlaying="y", side="right", showgrid=False),
+                      legend=dict(orientation="h", y=1.08, x=0))
+    return fig
 
 
 def calc_day_trading_signal(dt_df: pd.DataFrame, price_df: pd.DataFrame) -> dict | None:
@@ -816,6 +1009,8 @@ def build_html_report(rd: dict) -> str:
     <tr><th>項目</th><th>數值</th></tr>
     <tr class="highlight"><td>籌碼面技術評分</td><td>{rd.get("chip_tech_grade","N/A")}（{rd.get("chip_tech_score","N/A")} / 100）</td></tr>
     <tr><td>評分細項</td><td>{rd.get("chip_tech_summary","N/A")}</td></tr>
+    <tr><td>個股融資水位</td><td>{rd.get("margin_level","未評估")}</td></tr>
+    <tr><td>大盤與融資水位</td><td>{rd.get("market_margin","未評估")}</td></tr>
     <tr><td>波浪理論輔助判讀</td><td>{rd.get("wave_note","未評估")}</td></tr>
   </table>
   <p style="font-size:12px;color:#888">資料來源：台灣證交所公開交易資訊（經FinMind彙整），固定門檻規則式評分，非AI主觀判斷</p>
@@ -867,6 +1062,7 @@ def sidebar() -> tuple[str, bool]:
 📐 ④–⑧　EPS/股利預估
 🐋 STEP 6　大戶籌碼
 🔬 STEP 6b　籌碼技術評分
+💳 STEP 6b+　融資水位評估
 🌊 STEP 6c　波浪輔助判讀
 📸 STEP 6d　截圖AI解讀
 📅 STEP 7　投資策略
@@ -1420,6 +1616,77 @@ def main():
         })
 
     # ════════════════════════════════════════════════════════════
+    #  STEP 6b+ 融資水位評估（個股＋大盤）
+    # ════════════════════════════════════════════════════════════
+    st.markdown("---")
+    with st.expander("💳 STEP 6b+ ｜ 融資水位評估（個股＋大盤）", expanded=False):
+        st.caption("融資是散戶借錢買股。融資水位越高，籌碼越凌亂，股價回檔時容易因追繳、斷頭引發多殺多。"
+                   "個股看融資使用率（融資餘額÷融資限額）、融資餘額在近半年的相對位置、券資比，以及近 20 個交易日融資與股價的同步／背離；"
+                   "大盤看全市場融資餘額與加權指數的關係。固定規則計算，僅供參考。")
+        margin_lv = calc_margin_level(fetch_margin_data(sid, 200), fetch_price_history(sid, 200))
+        mkt_margin = calc_market_margin(fetch_market_margin(200))
+
+        st.markdown("#### 個股融資水位")
+        if not margin_lv:
+            st.info("融資資料不足（可能為不能融資的股票，或近期無資料），無法評估個股融資水位")
+        else:
+            lv = margin_lv
+            ph = fetch_price_history(sid, 200)
+            close = ph.set_index("date")["close"] if not ph.empty else pd.Series(dtype=float)
+            v = lv["view"]
+            st.plotly_chart(dual_axis_fig(v["date"], v["date"].map(close), v["MarginPurchaseTodayBalance"],
+                                          f"{sname} 股價 vs 融資餘額（近半年）", "收盤價", "融資餘額（張）"),
+                            width="stretch")
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("融資餘額", f"{lv['balance']:,.0f} 張", help=f"資料日 {lv['date']:%m-%d}")
+            m2.metric("融資使用率", f"{lv['usage']:.1f}%" if lv["usage"] is not None else "—",
+                      help=f"限額 {lv['limit']:,.0f} 張" if lv["limit"] else "無限額資料")
+            m3.metric("近半年區間位置", f"{lv['pos'] * 100:.0f}%", help="0%＝半年最低、100%＝最高")
+            m4.metric("券資比", f"{lv['short_ratio']:.1f}%" if lv["short_ratio"] is not None else "—",
+                      help=f"融券 {lv['short']:,.0f} 張")
+            st.markdown(f'<div style="border:2px solid {lv["color"]};color:{lv["color"]};border-radius:10px;'
+                        f'padding:10px 14px;font-weight:600;margin:8px 0">💳 {lv["level"]}</div>',
+                        unsafe_allow_html=True)
+            st.markdown(f'<div class="chip-box">{lv["text"]}</div>', unsafe_allow_html=True)
+            st.markdown(f"**近 {MARGIN_CHG_N} 個交易日融資 vs 股價：**")
+            st.markdown(f"{lv['rel'][0]} {lv['rel'][1]}")
+            if lv["short_note"]:
+                st.markdown(f"🔁 {lv['short_note']}")
+            rpt["margin_level"] = f"{lv['level']}：{lv['text']}　{lv['rel'][0]}{lv['rel'][1]}"
+
+        st.markdown("#### 大盤與融資水位的關係")
+        if not mkt_margin:
+            st.info("大盤融資資料暫時抓不到（可能是 FinMind 免費額度用完），稍後再試")
+        else:
+            mk = mkt_margin
+            v = mk["view"]
+            st.plotly_chart(dual_axis_fig(v["date"], v["index"], v["money"],
+                                          "加權指數 vs 全市場融資餘額（近半年）", "加權指數", "融資餘額（億元）"),
+                            width="stretch")
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("全市場融資餘額", f"{mk['money']:,.0f} 億", help=f"資料日 {mk['date']:%m-%d}")
+            m2.metric(f"融資 {MARGIN_CHG_N} 日變化", f"{mk['margin_chg']:+.1f}%",
+                      help=f"{mk['ref_money']:,.0f} → {mk['money']:,.0f} 億")
+            m3.metric(f"加權指數 {MARGIN_CHG_N} 日變化", f"{mk['index_chg']:+.1f}%",
+                      help=f"{mk['ref_index']:,.0f} → {mk['index']:,.0f}")
+            m4.metric("融資半年區間位置", f"{mk['pos'] * 100:.0f}%", help=f"指數位置 {mk['idx_pos'] * 100:.0f}%")
+            st.markdown(f'<div style="border:2px solid {mk["color"]};color:{mk["color"]};border-radius:10px;'
+                        f'padding:10px 14px;font-weight:600;margin:8px 0">🏛️ {mk["level"]}</div>',
+                        unsafe_allow_html=True)
+            st.markdown(f'<div class="chip-box">{mk["text"]}</div>', unsafe_allow_html=True)
+            st.markdown(f"**近 {MARGIN_CHG_N} 個交易日融資 vs 加權指數：**")
+            st.markdown(f"{mk['rel'][0]} {mk['rel'][1]}")
+            if margin_lv and margin_lv["margin_chg"] is not None and mk["margin_chg"] is not None:
+                diff = margin_lv["margin_chg"] - mk["margin_chg"]
+                judge = ("明顯高於大盤，散戶槓桿集中在這檔，要留意籌碼凌亂" if diff >= 10
+                         else "明顯低於大盤，這檔的融資相對退場，籌碼比大盤乾淨" if diff <= -10
+                         else "與大盤相近")
+                st.markdown(f"📊 本股融資 {MARGIN_CHG_N} 日 {margin_lv['margin_chg']:+.1f}%，"
+                            f"全市場融資 {mk['margin_chg']:+.1f}%：{judge}。")
+            st.caption("大盤融資維持率（斷頭警戒線約 130%）需 FinMind 付費會員，這裡改用融資餘額的水位與增減判斷。")
+            rpt["market_margin"] = f"{mk['level']}：{mk['text']}　{mk['rel'][0]}{mk['rel'][1]}"
+
+    # ════════════════════════════════════════════════════════════
     #  STEP 6c 波浪理論輔助判讀（ZigZag，輔助非定論）
     # ════════════════════════════════════════════════════════════
     st.markdown("---")
@@ -1461,11 +1728,15 @@ def main():
     with st.expander("📸 STEP 6d ｜ 技術線型截圖 AI 解讀＋自動數據交叉比對（選用）", expanded=False):
         st.caption("上傳看盤軟體截圖（如K線圖、法人買賣超畫面），AI 僅會回報畫面上實際可辨識的數據，並與上方 FinMind 自動抓取的數據交叉比對，避免主觀臆測")
 
-        api_key = st.text_input(
-            "Anthropic API Key（僅本次session使用，不會被儲存）",
-            type="password", key="anthropic_key",
-            help="至 https://console.anthropic.com 申請，用量計費，每次解讀約數美分",
-        )
+        api_key = read_project_env("ANTHROPIC_API_KEY")
+        if api_key:
+            st.caption("🔑 已從專案 .env 讀取 ANTHROPIC_API_KEY")
+        else:
+            api_key = st.text_input(
+                "Anthropic API Key（專案 .env 沒有設定時才需要輸入，僅本次session使用，不會被儲存）",
+                type="password", key="anthropic_key",
+                help="建議在專案根目錄的 .env 加上 ANTHROPIC_API_KEY=sk-ant-...；至 https://console.anthropic.com 申請，用量計費",
+            )
         uploaded = st.file_uploader("上傳或貼上技術線型截圖", type=["png", "jpg", "jpeg"], key="chart_upload")
 
         if uploaded and api_key:
@@ -1490,7 +1761,7 @@ def main():
                 for note in cross_notes:
                     st.markdown(f"- {note}")
         elif uploaded and not api_key:
-            st.warning("請先輸入 Anthropic API Key 才能進行 AI 解讀")
+            st.warning("請在專案 .env 設定 ANTHROPIC_API_KEY，或在上方輸入 API Key 才能進行 AI 解讀")
 
     # ════════════════════════════════════════════════════════════
     #  STEP 7 策略
