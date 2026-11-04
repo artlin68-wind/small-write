@@ -350,6 +350,17 @@
     </div>
 
     <div class="card">
+      <h2>📉 法人期貨空單水位＋台指期未平倉評估（大盤）</h2>
+      <p class="caption">台指期（TX）是看大盤方向的重要指標。外資常用期貨空單替手上的現貨避險，所以要搭配外資現貨買賣超一起看；投信的期貨多單多半來自 ETF／基金配置。未平倉口數是市場上還沒平倉的契約總數，搭配價格變化可判斷是新資金進場還是舊部位退場；每月第三個星期三結算前後未平倉會自然下降，比較時請留意。資料來源：期交所（經 FinMind 彙整），固定規則計算，僅供參考。</p>
+      <h3>法人期貨空單水位</h3>
+      <div class="chart-wrap"><div id="futPosChartDiv"></div></div>
+      <div id="futPosNote"></div>
+      <h3>台指期未平倉口數</h3>
+      <div class="chart-wrap"><div id="oiChartDiv"></div></div>
+      <div id="oiNote"></div>
+    </div>
+
+    <div class="card">
       <h2>💱 新台幣兌美元匯率關聯</h2>
       <p class="caption">以即期匯率（USD/TWD）與本股收盤價比對，計算近期相關係數，輔助判斷本股對匯率的敏感度。台股權值多為出口／電子股，通常新台幣走貶（美元走強）時較有利。此為統計關聯，非因果保證。</p>
       <div class="chart-wrap"><div id="fxDiv"></div></div>
@@ -541,14 +552,25 @@ async function fetchMargin(stockId, days = 200) {
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
-// 全市場融資餘額（億元）＋加權指數收盤。兩者都是全市場資料，同一天內只抓一次
+// 全市場資料同一天內只抓一次；存 Promise，讓同時發出的呼叫共用同一個請求，失敗則下次重抓
+const dailyCache = new Map();
+function cachedDaily(key, loader) {
+  const day = new Date().toDateString(), hit = dailyCache.get(key);
+  if (hit && hit.day === day) return hit.promise;
+  const promise = loader().catch(e => { dailyCache.delete(key); throw e; });
+  dailyCache.set(key, { day, promise });
+  return promise;
+}
+const fetchTaiex = () => cachedDaily("taiex", () => finmindGet("TaiwanStockPrice", "TAIEX", 200));
+
+// 全市場融資餘額（億元）＋加權指數收盤
 let marketMarginCache = null;
 async function fetchMarketMargin(days = 200) {
   const day = new Date().toDateString();
   if (marketMarginCache && marketMarginCache.day === day) return marketMarginCache.rows;
   const [mkt, idx] = await Promise.all([
     finmindGet("TaiwanStockTotalMarginPurchaseShortSale", "", days),
-    finmindGet("TaiwanStockPrice", "TAIEX", days),
+    fetchTaiex(),
   ]);
   const closeByDate = new Map(idx.map(r => [r.date, Number(r.close)]));
   const rows = mkt
@@ -559,6 +581,47 @@ async function fetchMarketMargin(days = 200) {
   if (rows.length) marketMarginCache = { day, rows };
   return rows;
 }
+
+// 台指期：三大法人多空未平倉（口）、全市場未平倉與近月收盤、外資現貨買賣超（億元）
+const fetchFutures = () => cachedDaily("futures", async () => {
+  const [inst, daily, spot] = await Promise.all([
+    finmindGet("TaiwanFuturesInstitutionalInvestors", "TX", 200),
+    finmindGet("TaiwanFuturesDaily", "TX", 100),
+    finmindGet("TaiwanStockTotalInstitutionalInvestors", "", 40),
+  ]);
+  const byDate = new Map();
+  inst.forEach(r => {
+    if (!byDate.has(r.date)) byDate.set(r.date, { date: r.date, foreign: null, trust: 0, dealer: 0, fLong: 0, fShort: 0 });
+    const o = byDate.get(r.date);
+    const lo = Number(r.long_open_interest_balance_volume) || 0, sh = Number(r.short_open_interest_balance_volume) || 0;
+    if (r.institutional_investors === "外資") { o.foreign = lo - sh; o.fLong = lo; o.fShort = sh; }
+    else if (r.institutional_investors === "投信") o.trust = lo - sh;
+    else if (r.institutional_investors === "自營商") o.dealer = lo - sh;
+  });
+  const rows = [...byDate.values()].filter(o => o.foreign !== null).sort((a, b) => a.date.localeCompare(b.date));
+  rows.forEach(o => { o.inst = o.foreign + o.trust + o.dealer; });
+
+  // 未平倉只算一般盤的單月契約（價差契約 contract_date 含「/」，不重複計算）
+  const oi = new Map(), near = new Map();
+  daily.forEach(r => {
+    if (r.trading_session !== "position" || String(r.contract_date).includes("/")) return;
+    oi.set(r.date, (oi.get(r.date) || 0) + (Number(r.open_interest) || 0));
+    if (Number(r.volume) > 0 && Number(r.close) > 0) {
+      const c = near.get(r.date);
+      if (!c || r.contract_date < c.cd) near.set(r.date, { cd: r.contract_date, close: Number(r.close) });
+    }
+  });
+  const oiRows = [...oi.keys()].sort().filter(d => oi.get(d) > 0 && near.has(d))
+    .map(d => ({ date: d, oi: oi.get(d), price: near.get(d).close }));
+
+  const spotMap = new Map();
+  spot.forEach(r => {
+    if (r.name === "Foreign_Investor" || r.name === "Foreign_Dealer_Self")
+      spotMap.set(r.date, (spotMap.get(r.date) || 0) + (Number(r.buy) - Number(r.sell)) / 1e8);
+  });
+  const spotRows = [...spotMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([date, net]) => ({ date, net }));
+  return { rows, oiRows, spotRows };
+});
 
 async function fetchDayTrading(stockId, days = 40) {
   const data = await finmindGet("TaiwanStockDayTrading", stockId, days);
@@ -1213,6 +1276,91 @@ function calcMarketMaintenance(rows) {
   else { level = "大盤融資獲利豐厚"; color = "#f39c4a"; text = `大盤估算維持率 ${r1}%，融資戶整體獲利豐厚，散戶信心強；這種時候追價意願高，指數轉弱時獲利了結賣壓也會比較大。`; }
   if (chg20 <= -15) text += ` 近 ${MARGIN_CHG_N} 日維持率下降 ${Math.abs(chg20).toFixed(1)} 個百分點，下滑速度很快。`;
   return { ratio, min20, chg20, date: lastOf(view).date, view, level, color, text };
+}
+
+// ══════════════════════════════════════════════════════════════
+//  法人期貨空單水位＋台指期未平倉
+// ══════════════════════════════════════════════════════════════
+
+const FUT_SHORT_N = 5;          // 外資期貨短期加空／回補看 5 日
+const FUT_MOVE_LOTS = 5000;     // 5 日增減超過這個口數才算明顯加空／回補
+const SPOT_MOVE_YI = 50;        // 外資現貨 5 日買賣超超過 50 億才算有方向
+const lotsTxt = v => `${Math.abs(Math.round(v)).toLocaleString()} 口`;
+const netLots = v => `${v < 0 ? "淨空" : "淨多"} ${lotsTxt(v)}`;
+const signedLots = v => `${v >= 0 ? "+" : "-"}${Math.abs(Math.round(v)).toLocaleString()} 口`;
+
+function calcFuturesPosition(data) {
+  const { rows, spotRows } = data || {};
+  if (!rows || rows.length < MARGIN_CHG_N + 1) return null;
+  const view = rows.slice(-MARGIN_RANGE_N);
+  const last = lastOf(rows), r5 = rows[rows.length - 1 - FUT_SHORT_N], r20 = rows[rows.length - 1 - MARGIN_CHG_N];
+  // 空單水位：1＝近半年最空、0＝近半年最不空
+  const shortPos = 1 - rangePos(view.map(r => r.foreign), last.foreign);
+  const chg5 = last.foreign - r5.foreign, chg20 = last.foreign - r20.foreign;
+  const spot5 = spotRows && spotRows.length >= FUT_SHORT_N ? spotRows.slice(-FUT_SHORT_N).reduce((a, r) => a + r.net, 0) : null;
+  const posPct = `${(shortPos * 100).toFixed(0)}%`;
+
+  let level, color, text;
+  if (shortPos >= 0.85) { level = "外資空單水位偏高"; color = "#f39c4a"; text = `外資台指期${netLots(last.foreign)}，接近近半年最空的位置（空單水位 ${posPct}）。外資期貨端的避險／看空部位很重，大盤上檔容易受壓，急跌時也可能加速。`; }
+  else if (shortPos <= 0.2) { level = "外資空單水位偏低"; color = "#3ecf74"; text = `外資台指期${netLots(last.foreign)}，是近半年空單相對少的時候（空單水位 ${posPct}），外資期貨偏空力道減弱，對大盤較有利。`; }
+  else { level = "外資空單水位中性"; color = "#8fb4ff"; text = `外資台指期${netLots(last.foreign)}，空單水位 ${posPct}，在近半年區間的中段。`; }
+
+  // 期貨＋現貨一起看：同步才是較明確的方向，反向多半是避險
+  let combo;
+  const fu = `期貨 5 日${chg5 <= 0 ? "加空" : "回補"} ${lotsTxt(chg5)}`;
+  const addShort = chg5 <= -FUT_MOVE_LOTS, cover = chg5 >= FUT_MOVE_LOTS;
+  if (spot5 === null) combo = { icon: "❔", text: `${fu}；外資現貨資料不足，無法判斷是否為避險。` };
+  else {
+    const sp = `外資現貨 5 日${spot5 >= 0 ? "買超" : "賣超"} ${Math.round(Math.abs(spot5)).toLocaleString()} 億`;
+    if (addShort && spot5 < -SPOT_MOVE_YI) {
+      combo = { icon: "🔴", text: `${fu}、${sp}：期貨、現貨同步偏空，是較明確的看空訊號，短線宜保守。` };
+      if (shortPos >= 0.85) { level = "外資期現貨同步偏空"; color = "#ff5c5c"; }
+    } else if (addShort && spot5 > SPOT_MOVE_YI) combo = { icon: "⚠️", text: `${fu}、${sp}：一邊買現貨一邊加空期貨，空單多半是替現貨部位避險，不一定是看空。` };
+    else if (cover && spot5 > SPOT_MOVE_YI) combo = { icon: "✅", text: `${fu}、${sp}：期貨回補、現貨買超，外資期現貨同步偏多。` };
+    else if (cover && spot5 < -SPOT_MOVE_YI) combo = { icon: "➡️", text: `${fu}、${sp}：期貨回補但現貨調節，可能是賣出現貨後同步解除避險，方向不明確。` };
+    else if (addShort) combo = { icon: "⚠️", text: `${fu}、${sp}：外資持續加空期貨，現貨方向不明顯，留意大盤壓力。` };
+    else if (cover) combo = { icon: "➡️", text: `${fu}、${sp}：外資期貨空單回補，偏空力道減輕。` };
+    else combo = { icon: "➡️", text: `${fu}、${sp}：外資期貨部位 5 日增減未達 ${FUT_MOVE_LOTS.toLocaleString()} 口，變化不大，以空單水位判斷為主。` };
+  }
+
+  // 期貨多空總量相等：法人以外的交易人（散戶、中實戶）淨部位＝－法人合計
+  const retail = -last.inst;
+  let instTxt = `三大法人合計${netLots(last.inst)}（外資${netLots(last.foreign)}、投信${netLots(last.trust)}、自營商${netLots(last.dealer)}），法人以外的交易人（多為散戶、中實戶）${netLots(retail)}。`;
+  if (retail >= 10000) instTxt += "散戶站多方、法人站空方，籌碼面對多方較不利。";
+  else if (retail <= -10000) instTxt += "散戶偏空、法人偏多，散戶指標反向參考時對行情較有利。";
+  if (last.trust >= 20000) instTxt += "投信的大量期貨多單多半來自 ETF／基金配置，會和外資空單部分互相抵銷，所以不要只看外資一方。";
+
+  return { last, view, shortPos, chg5, chg20, spot5, level, color, text, combo, instTxt };
+}
+
+function calcOpenInterest(data, fp) {
+  const oiRows = data && data.oiRows;
+  if (!oiRows || oiRows.length < MARGIN_CHG_N + 1) return null;
+  const last = lastOf(oiRows), ref = oiRows[oiRows.length - 1 - MARGIN_CHG_N];
+  const oiChg = pctChg(last.oi, ref.oi), pxChg = pctChg(last.price, ref.price);
+  const pos = rangePos(oiRows.map(r => r.oi), last.oi);
+  const shortShare = fp && fp.last.date === last.date ? fp.last.fShort / last.oi * 100 : null;
+
+  const o = `未平倉 ${signed(oiChg, 1)}%`, p = `期貨價格 ${signed(pxChg, 1)}%`;
+  const oUp = oiChg >= 5, oDown = oiChg <= -5, pUp = pxChg >= 3, pDown = pxChg <= -3;
+  let rel;
+  if (pUp && oUp) rel = { icon: "✅", text: `價漲、未平倉增（${p}、${o}）：新多單持續進場，多頭趨勢有資金支撐。` };
+  else if (pUp && oDown) rel = { icon: "⚠️", text: `價漲、未平倉減（${p}、${o}）：上漲主要來自空單回補（軋空），新買盤不足，續航力要觀察。` };
+  else if (pUp) rel = { icon: "➡️", text: `價漲、未平倉持平（${p}、${o}）：上漲中沒有大量新部位進場，屬溫和上漲。` };
+  else if (pDown && oUp) rel = { icon: "🔴", text: `價跌、未平倉增（${p}、${o}）：新空單積極進場，空方主導，跌勢可能延續。` };
+  else if (pDown && oDown) rel = { icon: "➡️", text: `價跌、未平倉減（${p}、${o}）：多單停損或了結出場，賣壓在消化，跌勢可能趨緩。` };
+  else if (pDown) rel = { icon: "⚠️", text: `價跌、未平倉持平（${p}、${o}）：下跌但部位沒有明顯退場，多空仍在拉鋸。` };
+  else if (oUp) rel = { icon: "⚠️", text: `盤整中未平倉增加（${p}、${o}）：多空雙方都在加碼，醞釀表態，留意突破方向。` };
+  else if (oDown) rel = { icon: "➡️", text: `盤整中未平倉減少（${p}、${o}）：多空都在退場觀望。` };
+  else rel = { icon: "➡️", text: `價格與未平倉變化都不大（${p}、${o}）。` };
+
+  let level, color, text;
+  const posTxt = `全市場台指期未平倉 ${last.oi.toLocaleString()} 口，位於近 ${oiRows.length} 個交易日區間的 ${(pos * 100).toFixed(0)}% 位置`;
+  if (pos >= 0.85) { level = "未平倉水位偏高"; color = "#f39c4a"; text = `${posTxt}，多空對峙激烈，結算或突破時波動容易放大。`; }
+  else if (pos <= 0.2) { level = "未平倉水位偏低"; color = "#8fb4ff"; text = `${posTxt}，市場參與度降溫，行情較缺乏方向。`; }
+  else { level = "未平倉水位中性"; color = "#8fb4ff"; text = `${posTxt}。`; }
+  if (shortShare !== null) text += `外資空單佔全市場未平倉的 ${shortShare.toFixed(0)}%。`;
+  return { last, ref, oiChg, pxChg, pos, shortShare, level, color, text, rel, view: oiRows };
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -2779,7 +2927,7 @@ async function runAnalysis() {
 
   try {
     // 若是用代碼查詢（尚未取得名稱），順便並行抓股票清單以補上公司名稱，讓標題一律顯示「名稱（代碼）」
-    const [priceRows, instRows, marginRows, dtRows, fxRows, stockList, fundData, official, mktMarginRows] = await Promise.all([
+    const [priceRows, instRows, marginRows, dtRows, fxRows, stockList, fundData, official, mktMarginRows, futData, taiexRows] = await Promise.all([
       fetchPriceHistory(stockId, 130),
       fetchInstitutional(stockId, 40),
       fetchMargin(stockId, 200),
@@ -2790,6 +2938,8 @@ async function runAnalysis() {
       fetchOfficialProfile(stockId),
       // 大盤融資只是輔助資訊，抓不到不影響其他分析
       fetchMarketMargin(200).catch(e => { console.error("抓取大盤融資失敗：", e); return []; }),
+      fetchFutures().catch(e => { console.error("抓取台指期資料失敗：", e); return null; }),
+      fetchTaiex().catch(() => []),
     ]);
 
     // 股票清單一天只抓一次（存在瀏覽器），順便補上公司名稱與產業別
@@ -2866,6 +3016,11 @@ async function runAnalysis() {
     const mktMaint = calcMarketMaintenance(mktMarginRows);
     renderMarginLevel(marginLv, mktMargin, priceRows, sname, stockMaint, mktMaint);
 
+    // 法人期貨空單＋未平倉
+    const futPos = calcFuturesPosition(futData);
+    const futOi = calcOpenInterest(futData, futPos);
+    renderFutures(futPos, futOi, taiexRows);
+
     // 匯率關聯
     renderFxEval(fx, sname);
 
@@ -2890,6 +3045,7 @@ async function runAnalysis() {
       renderFundamentalCharts();
       renderFxEval(fx, sname);
       renderMarginLevel(marginLv, mktMargin, priceRows, sname, stockMaint, mktMaint);
+      renderFutures(futPos, futOi, taiexRows);
       updateWave(priceRows, sname);
       updateFib(priceRows, sname);
     };
@@ -2983,6 +3139,51 @@ function renderMarginLevel(lv, mkt, priceRows, sname, sm, mm) {
     `<div class="chip-box">${mkt.text}</div>` +
     `<div class="item-row"><b>近 ${MARGIN_CHG_N} 個交易日融資 vs 加權指數：</b></div>` + relHtml(mkt.rel) + vsTxt +
     "";
+}
+
+function renderFutures(fp, oi, taiexRows) {
+  const verdict = (o, icon) => `<div class="verdict" style="background:${o.color}18;border-color:${o.color};color:${o.color}">${icon} ${o.level}</div>`;
+  const pEl = document.getElementById("futPosNote"), pChart = document.getElementById("futPosChartDiv");
+  if (!fp) {
+    pChart.innerHTML = "";
+    pEl.innerHTML = `<div class="info-box">台指期法人資料暫時抓不到（可能是 FinMind 免費額度用完），稍後再試</div>`;
+  } else {
+    const idx = new Map((taiexRows || []).map(r => [r.date, Number(r.close)]));
+    const v = fp.view.filter(r => idx.has(r.date));
+    if (v.length > 5) {
+      renderDualLineSVG("futPosChartDiv", v.map(r => r.date), v.map(r => idx.get(r.date)), v.map(r => r.foreign),
+        "加權指數 vs 外資台指期淨部位（近半年）", "加權指數", "外資淨部位（口，負＝淨空）", x => x.toFixed(0), fmtNum);
+    } else pChart.innerHTML = "";
+    pEl.innerHTML =
+      `<div class="metric-grid">` +
+      metricHtml("外資淨部位", netLots(fp.last.foreign), `多 ${fp.last.fLong.toLocaleString()}／空 ${fp.last.fShort.toLocaleString()} 口`) +
+      metricHtml("5 日變化", signedLots(fp.chg5), fp.chg5 < 0 ? "加空" : "回補", fp.chg5 <= -FUT_MOVE_LOTS ? "#ff7a7a" : undefined) +
+      metricHtml(`${MARGIN_CHG_N} 日變化`, signedLots(fp.chg20), fp.chg20 < 0 ? "加空" : "回補") +
+      metricHtml("空單水位", `${(fp.shortPos * 100).toFixed(0)}%`, "100%＝近半年最空") +
+      `</div>` + verdict(fp, "📉") +
+      `<div class="chip-box">${fp.text}</div>` +
+      `<div class="item-row"><b>外資期貨＋現貨：</b></div><div class="item-row">${fp.combo.icon} ${fp.combo.text}</div>` +
+      `<div class="item-row">🏦 ${fp.instTxt}</div>` +
+      `<p class="caption">資料日 ${fp.last.date.slice(5)}（期貨法人資料約下午 3 點後公布）</p>`;
+  }
+
+  const oEl = document.getElementById("oiNote"), oChart = document.getElementById("oiChartDiv");
+  if (!oi) {
+    oChart.innerHTML = "";
+    oEl.innerHTML = `<div class="info-box">台指期未平倉資料暫時抓不到，稍後再試</div>`;
+    return;
+  }
+  renderDualLineSVG("oiChartDiv", oi.view.map(r => r.date), oi.view.map(r => r.price), oi.view.map(r => r.oi),
+    `台指期近月價格 vs 全市場未平倉（近 ${oi.view.length} 個交易日）`, "近月收盤", "未平倉（口）", x => x.toFixed(0), fmtNum);
+  oEl.innerHTML =
+    `<div class="metric-grid">` +
+    metricHtml("全市場未平倉", `${oi.last.oi.toLocaleString()} 口`, `資料日 ${oi.last.date.slice(5)}`) +
+    metricHtml(`未平倉 ${MARGIN_CHG_N} 日變化`, `${signed(oi.oiChg, 1)}%`, `${oi.ref.oi.toLocaleString()} → ${oi.last.oi.toLocaleString()}`) +
+    metricHtml(`期貨價格 ${MARGIN_CHG_N} 日變化`, `${signed(oi.pxChg, 1)}%`, `${oi.ref.price.toFixed(0)} → ${oi.last.price.toFixed(0)}`) +
+    metricHtml("外資空單佔比", oi.shortShare !== null ? `${oi.shortShare.toFixed(0)}%` : "—", "外資空單÷全市場未平倉") +
+    `</div>` + verdict(oi, "📊") +
+    `<div class="chip-box">${oi.text}</div>` +
+    `<div class="item-row"><b>近 ${MARGIN_CHG_N} 個交易日價格 vs 未平倉：</b></div><div class="item-row">${oi.rel.icon} ${oi.rel.text}</div>`;
 }
 
 function renderMaintenance(sm, mm, sname, verdict) {

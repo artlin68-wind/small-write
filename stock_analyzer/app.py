@@ -302,6 +302,55 @@ def fetch_market_margin(days: int = 200) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=3_600, show_spinner=False)
+def fetch_futures_data() -> dict:
+    """
+    台指期（TX）：三大法人多空未平倉（口）、全市場未平倉與近月收盤、外資現貨買賣超（億元），
+    以及加權指數收盤。來源：期交所／證交所（經 FinMind 彙整）
+    """
+    def get(dataset, data_id, days):
+        start = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        d = requests.get(f"{FINMIND_BASE}?dataset={dataset}&data_id={data_id}&start_date={start}", timeout=30).json()
+        return d["data"] if d.get("status") == 200 and d.get("data") else []
+    out = {"pos": pd.DataFrame(), "oi": pd.DataFrame(), "spot": pd.DataFrame(), "taiex": pd.DataFrame()}
+    try:
+        inst = pd.DataFrame(get("TaiwanFuturesInstitutionalInvestors", "TX", 200))
+        if not inst.empty:
+            inst["net"] = inst["long_open_interest_balance_volume"] - inst["short_open_interest_balance_volume"]
+            piv = inst.pivot_table(index="date", columns="institutional_investors", values="net", aggfunc="sum")
+            fx = inst[inst["institutional_investors"] == "外資"].set_index("date")
+            pos = pd.DataFrame({
+                "foreign": piv.get("外資"), "trust": piv.get("投信", 0), "dealer": piv.get("自營商", 0),
+                "f_long": fx["long_open_interest_balance_volume"], "f_short": fx["short_open_interest_balance_volume"],
+            }).dropna(subset=["foreign"]).fillna(0)
+            pos["inst"] = pos["foreign"] + pos["trust"] + pos["dealer"]
+            pos.index = pd.to_datetime(pos.index)
+            out["pos"] = pos.sort_index().reset_index().rename(columns={"index": "date"})
+        daily = pd.DataFrame(get("TaiwanFuturesDaily", "TX", 100))
+        if not daily.empty:
+            # 未平倉只算一般盤的單月契約（價差契約 contract_date 含「/」，不重複計算）
+            d = daily[(daily["trading_session"] == "position") & ~daily["contract_date"].astype(str).str.contains("/")]
+            oi = d.groupby("date")["open_interest"].sum()
+            near = (d[(d["volume"] > 0) & (d["close"] > 0)].sort_values("contract_date")
+                    .groupby("date").first()["close"])
+            o = pd.DataFrame({"oi": oi, "price": near}).dropna()
+            o = o[o["oi"] > 0]
+            o.index = pd.to_datetime(o.index)
+            out["oi"] = o.sort_index().reset_index().rename(columns={"index": "date"})
+        spot = pd.DataFrame(get("TaiwanStockTotalInstitutionalInvestors", "", 40))
+        if not spot.empty:
+            sp = spot[spot["name"].isin(["Foreign_Investor", "Foreign_Dealer_Self"])].copy()
+            sp["net"] = (sp["buy"] - sp["sell"]) / 1e8
+            out["spot"] = sp.groupby("date")["net"].sum().sort_index().reset_index()
+        tx = pd.DataFrame(get("TaiwanStockPrice", "TAIEX", 200))
+        if not tx.empty:
+            tx["date"] = pd.to_datetime(tx["date"])
+            out["taiex"] = tx[["date", "close"]].sort_values("date").reset_index(drop=True)
+    except Exception:
+        pass
+    return out
+
+
+@st.cache_data(ttl=3_600, show_spinner=False)
 def fetch_institutional_data(stock_id: str, days: int = 40) -> pd.DataFrame:
     """三大法人（外資／投信／自營商）買賣超，來源：台灣證交所公開交易資訊（經 FinMind 彙整）"""
     try:
@@ -703,6 +752,115 @@ def calc_market_maintenance(df: pd.DataFrame) -> dict | None:
         text += f" 近 {MARGIN_CHG_N} 日維持率下降 {abs(chg20):.1f} 個百分點，下滑速度很快。"
     return {"ratio": ratio, "min20": min20, "chg20": chg20, "date": view["date"].iloc[-1],
             "view": view, "level": level, "color": color, "text": text}
+
+
+FUT_SHORT_N = 5         # 外資期貨短期加空／回補看 5 日
+FUT_MOVE_LOTS = 5000    # 5 日增減超過這個口數才算明顯加空／回補
+SPOT_MOVE_YI = 50       # 外資現貨 5 日買賣超超過 50 億才算有方向
+
+
+def _net_lots(v) -> str:
+    return f"{'淨空' if v < 0 else '淨多'} {abs(v):,.0f} 口"
+
+
+def calc_futures_position(pos: pd.DataFrame, spot: pd.DataFrame) -> dict | None:
+    """外資台指期空單水位（近半年相對位置）、5／20 日加空回補，搭配外資現貨買賣超判斷是否為避險"""
+    if pos.empty or len(pos) < MARGIN_CHG_N + 1:
+        return None
+    view = pos.tail(MARGIN_RANGE_N)
+    last = pos.iloc[-1]
+    short_pos = 1 - _range_pos(view["foreign"], float(last["foreign"]))   # 1＝近半年最空
+    chg5 = float(last["foreign"] - pos.iloc[-1 - FUT_SHORT_N]["foreign"])
+    chg20 = float(last["foreign"] - pos.iloc[-1 - MARGIN_CHG_N]["foreign"])
+    spot5 = float(spot["net"].tail(FUT_SHORT_N).sum()) if len(spot) >= FUT_SHORT_N else None
+    pp = f"{short_pos * 100:.0f}%"
+    if short_pos >= 0.85:
+        level, color = "外資空單水位偏高", "#e67e22"
+        text = f"外資台指期{_net_lots(last['foreign'])}，接近近半年最空的位置（空單水位 {pp}）。外資期貨端的避險／看空部位很重，大盤上檔容易受壓，急跌時也可能加速。"
+    elif short_pos <= 0.2:
+        level, color = "外資空單水位偏低", "#27ae60"
+        text = f"外資台指期{_net_lots(last['foreign'])}，是近半年空單相對少的時候（空單水位 {pp}），外資期貨偏空力道減弱，對大盤較有利。"
+    else:
+        level, color = "外資空單水位中性", "#2e86c1"
+        text = f"外資台指期{_net_lots(last['foreign'])}，空單水位 {pp}，在近半年區間的中段。"
+
+    fu = f"期貨 5 日{'加空' if chg5 <= 0 else '回補'} {abs(chg5):,.0f} 口"
+    add_short, cover = chg5 <= -FUT_MOVE_LOTS, chg5 >= FUT_MOVE_LOTS
+    if spot5 is None:
+        combo = ("❔", f"{fu}；外資現貨資料不足，無法判斷是否為避險。")
+    else:
+        sp = f"外資現貨 5 日{'買超' if spot5 >= 0 else '賣超'} {abs(spot5):,.0f} 億"
+        if add_short and spot5 < -SPOT_MOVE_YI:
+            combo = ("🔴", f"{fu}、{sp}：期貨、現貨同步偏空，是較明確的看空訊號，短線宜保守。")
+            if short_pos >= 0.85:
+                level, color = "外資期現貨同步偏空", "#e74c3c"
+        elif add_short and spot5 > SPOT_MOVE_YI:
+            combo = ("⚠️", f"{fu}、{sp}：一邊買現貨一邊加空期貨，空單多半是替現貨部位避險，不一定是看空。")
+        elif cover and spot5 > SPOT_MOVE_YI:
+            combo = ("✅", f"{fu}、{sp}：期貨回補、現貨買超，外資期現貨同步偏多。")
+        elif cover and spot5 < -SPOT_MOVE_YI:
+            combo = ("➡️", f"{fu}、{sp}：期貨回補但現貨調節，可能是賣出現貨後同步解除避險，方向不明確。")
+        elif add_short:
+            combo = ("⚠️", f"{fu}、{sp}：外資持續加空期貨，現貨方向不明顯，留意大盤壓力。")
+        elif cover:
+            combo = ("➡️", f"{fu}、{sp}：外資期貨空單回補，偏空力道減輕。")
+        else:
+            combo = ("➡️", f"{fu}、{sp}：外資期貨部位 5 日增減未達 {FUT_MOVE_LOTS:,} 口，變化不大，以空單水位判斷為主。")
+
+    # 期貨多空總量相等：法人以外的交易人（散戶、中實戶）淨部位＝－法人合計
+    retail = -float(last["inst"])
+    inst_txt = (f"三大法人合計{_net_lots(last['inst'])}（外資{_net_lots(last['foreign'])}、投信{_net_lots(last['trust'])}、"
+                f"自營商{_net_lots(last['dealer'])}），法人以外的交易人（多為散戶、中實戶）{_net_lots(retail)}。")
+    if retail >= 10000:
+        inst_txt += "散戶站多方、法人站空方，籌碼面對多方較不利。"
+    elif retail <= -10000:
+        inst_txt += "散戶偏空、法人偏多，散戶指標反向參考時對行情較有利。"
+    if last["trust"] >= 20000:
+        inst_txt += "投信的大量期貨多單多半來自 ETF／基金配置，會和外資空單部分互相抵銷，所以不要只看外資一方。"
+    return {"last": last, "view": view, "short_pos": short_pos, "chg5": chg5, "chg20": chg20, "spot5": spot5,
+            "level": level, "color": color, "text": text, "combo": combo, "inst_txt": inst_txt}
+
+
+def calc_open_interest(oi: pd.DataFrame, fp: dict | None) -> dict | None:
+    """全市場台指期未平倉：近 20 日未平倉增減 vs 近月期貨價格漲跌，以及未平倉相對水位"""
+    if oi.empty or len(oi) < MARGIN_CHG_N + 1:
+        return None
+    last, ref = oi.iloc[-1], oi.iloc[-1 - MARGIN_CHG_N]
+    oi_chg, px_chg = _pct_chg(float(last["oi"]), float(ref["oi"])), _pct_chg(float(last["price"]), float(ref["price"]))
+    pos = _range_pos(oi["oi"], float(last["oi"]))
+    short_share = (float(fp["last"]["f_short"]) / float(last["oi"]) * 100
+                   if fp and fp["last"]["date"] == last["date"] else None)
+    o, p = f"未平倉 {oi_chg:+.1f}%", f"期貨價格 {px_chg:+.1f}%"
+    o_up, o_down, p_up, p_down = oi_chg >= 5, oi_chg <= -5, px_chg >= 3, px_chg <= -3
+    if p_up and o_up:
+        rel = ("✅", f"價漲、未平倉增（{p}、{o}）：新多單持續進場，多頭趨勢有資金支撐。")
+    elif p_up and o_down:
+        rel = ("⚠️", f"價漲、未平倉減（{p}、{o}）：上漲主要來自空單回補（軋空），新買盤不足，續航力要觀察。")
+    elif p_up:
+        rel = ("➡️", f"價漲、未平倉持平（{p}、{o}）：上漲中沒有大量新部位進場，屬溫和上漲。")
+    elif p_down and o_up:
+        rel = ("🔴", f"價跌、未平倉增（{p}、{o}）：新空單積極進場，空方主導，跌勢可能延續。")
+    elif p_down and o_down:
+        rel = ("➡️", f"價跌、未平倉減（{p}、{o}）：多單停損或了結出場，賣壓在消化，跌勢可能趨緩。")
+    elif p_down:
+        rel = ("⚠️", f"價跌、未平倉持平（{p}、{o}）：下跌但部位沒有明顯退場，多空仍在拉鋸。")
+    elif o_up:
+        rel = ("⚠️", f"盤整中未平倉增加（{p}、{o}）：多空雙方都在加碼，醞釀表態，留意突破方向。")
+    elif o_down:
+        rel = ("➡️", f"盤整中未平倉減少（{p}、{o}）：多空都在退場觀望。")
+    else:
+        rel = ("➡️", f"價格與未平倉變化都不大（{p}、{o}）。")
+    pos_txt = f"全市場台指期未平倉 {last['oi']:,.0f} 口，位於近 {len(oi)} 個交易日區間的 {pos * 100:.0f}% 位置"
+    if pos >= 0.85:
+        level, color, text = "未平倉水位偏高", "#e67e22", f"{pos_txt}，多空對峙激烈，結算或突破時波動容易放大。"
+    elif pos <= 0.2:
+        level, color, text = "未平倉水位偏低", "#2e86c1", f"{pos_txt}，市場參與度降溫，行情較缺乏方向。"
+    else:
+        level, color, text = "未平倉水位中性", "#2e86c1", f"{pos_txt}。"
+    if short_share is not None:
+        text += f"外資空單佔全市場未平倉的 {short_share:.0f}%。"
+    return {"last": last, "ref": ref, "oi_chg": oi_chg, "px_chg": px_chg, "pos": pos, "short_share": short_share,
+            "level": level, "color": color, "text": text, "rel": rel}
 
 
 def dual_axis_fig(dates, a, b, title: str, a_name: str, b_name: str) -> go.Figure:
@@ -1115,6 +1273,8 @@ def build_html_report(rd: dict) -> str:
     <tr><td>大盤與融資水位</td><td>{rd.get("market_margin","未評估")}</td></tr>
     <tr><td>個股融資維持率（估算）</td><td>{rd.get("stock_maint","未評估")}</td></tr>
     <tr><td>大盤融資維持率（估算）</td><td>{rd.get("market_maint","未評估")}</td></tr>
+    <tr><td>外資期貨空單水位</td><td>{rd.get("futures_pos","未評估")}</td></tr>
+    <tr><td>台指期未平倉</td><td>{rd.get("futures_oi","未評估")}</td></tr>
     <tr><td>波浪理論輔助判讀</td><td>{rd.get("wave_note","未評估")}</td></tr>
   </table>
   <p style="font-size:12px;color:#888">資料來源：台灣證交所公開交易資訊（經FinMind彙整），固定門檻規則式評分，非AI主觀判斷</p>
@@ -1167,6 +1327,7 @@ def sidebar() -> tuple[str, bool]:
 🐋 STEP 6　大戶籌碼
 🔬 STEP 6b　籌碼技術評分
 💳 STEP 6b+　融資水位評估
+📉 STEP 6b++　期貨空單＋未平倉
 🌊 STEP 6c　波浪輔助判讀
 📸 STEP 6d　截圖AI解讀
 📅 STEP 7　投資策略
@@ -1848,6 +2009,69 @@ def main():
                         unsafe_allow_html=True)
             st.markdown(f'<div class="chip-box">{mm["text"]}</div>', unsafe_allow_html=True)
             rpt["market_maint"] = f"{mm['level']}：{mm['text']}"
+
+    # ════════════════════════════════════════════════════════════
+    #  STEP 6b++ 法人期貨空單水位＋台指期未平倉（大盤）
+    # ════════════════════════════════════════════════════════════
+    st.markdown("---")
+    with st.expander("📉 STEP 6b++ ｜ 法人期貨空單水位＋台指期未平倉評估（大盤）", expanded=False):
+        st.caption("台指期（TX）是看大盤方向的重要指標。外資常用期貨空單替手上的現貨避險，所以要搭配外資現貨買賣超一起看；"
+                   "投信的期貨多單多半來自 ETF／基金配置。未平倉口數是市場上還沒平倉的契約總數，搭配價格變化可判斷是新資金進場還是舊部位退場；"
+                   "每月第三個星期三結算前後未平倉會自然下降，比較時請留意。資料來源：期交所（經 FinMind 彙整），固定規則計算，僅供參考。")
+        fut = fetch_futures_data()
+        fut_pos = calc_futures_position(fut["pos"], fut["spot"])
+        fut_oi = calc_open_interest(fut["oi"], fut_pos)
+        box = lambda o, icon: st.markdown(
+            f'<div style="border:2px solid {o["color"]};color:{o["color"]};border-radius:10px;'
+            f'padding:10px 14px;font-weight:600;margin:8px 0">{icon} {o["level"]}</div>', unsafe_allow_html=True)
+
+        st.markdown("#### 法人期貨空單水位")
+        if not fut_pos:
+            st.info("台指期法人資料暫時抓不到（可能是 FinMind 免費額度用完），稍後再試")
+        else:
+            fp = fut_pos
+            v = fp["view"]
+            if not fut["taiex"].empty:
+                idx = fut["taiex"].set_index("date")["close"]
+                st.plotly_chart(dual_axis_fig(v["date"], v["date"].map(idx), v["foreign"],
+                                              "加權指數 vs 外資台指期淨部位（近半年）", "加權指數", "外資淨部位（口，負＝淨空）"),
+                                width="stretch")
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("外資淨部位", _net_lots(fp["last"]["foreign"]),
+                      help=f"多 {fp['last']['f_long']:,.0f}／空 {fp['last']['f_short']:,.0f} 口")
+            m2.metric("5 日變化", f"{fp['chg5']:+,.0f} 口", delta="加空" if fp["chg5"] < 0 else "回補", delta_color="off")
+            m3.metric(f"{MARGIN_CHG_N} 日變化", f"{fp['chg20']:+,.0f} 口", delta="加空" if fp["chg20"] < 0 else "回補", delta_color="off")
+            m4.metric("空單水位", f"{fp['short_pos'] * 100:.0f}%", help="100%＝近半年最空")
+            box(fp, "📉")
+            st.markdown(f'<div class="chip-box">{fp["text"]}</div>', unsafe_allow_html=True)
+            st.markdown("**外資期貨＋現貨：**")
+            st.markdown(f"{fp['combo'][0]} {fp['combo'][1]}")
+            st.markdown(f"🏦 {fp['inst_txt']}")
+            st.caption(f"資料日 {fp['last']['date']:%m-%d}（期貨法人資料約下午 3 點後公布）")
+            rpt["futures_pos"] = f"{fp['level']}：{fp['text']}　{fp['combo'][0]}{fp['combo'][1]}"
+
+        st.markdown("#### 台指期未平倉口數")
+        if not fut_oi:
+            st.info("台指期未平倉資料暫時抓不到，稍後再試")
+        else:
+            oi = fut_oi
+            od = fut["oi"]
+            st.plotly_chart(dual_axis_fig(od["date"], od["price"], od["oi"],
+                                          f"台指期近月價格 vs 全市場未平倉（近 {len(od)} 個交易日）", "近月收盤", "未平倉（口）"),
+                            width="stretch")
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("全市場未平倉", f"{oi['last']['oi']:,.0f} 口", help=f"資料日 {oi['last']['date']:%m-%d}")
+            m2.metric(f"未平倉 {MARGIN_CHG_N} 日變化", f"{oi['oi_chg']:+.1f}%",
+                      help=f"{oi['ref']['oi']:,.0f} → {oi['last']['oi']:,.0f}")
+            m3.metric(f"期貨價格 {MARGIN_CHG_N} 日變化", f"{oi['px_chg']:+.1f}%",
+                      help=f"{oi['ref']['price']:,.0f} → {oi['last']['price']:,.0f}")
+            m4.metric("外資空單佔比", f"{oi['short_share']:.0f}%" if oi["short_share"] is not None else "—",
+                      help="外資空單÷全市場未平倉")
+            box(oi, "📊")
+            st.markdown(f'<div class="chip-box">{oi["text"]}</div>', unsafe_allow_html=True)
+            st.markdown(f"**近 {MARGIN_CHG_N} 個交易日價格 vs 未平倉：**")
+            st.markdown(f"{oi['rel'][0]} {oi['rel'][1]}")
+            rpt["futures_oi"] = f"{oi['level']}：{oi['text']}　{oi['rel'][0]}{oi['rel'][1]}"
 
     # ════════════════════════════════════════════════════════════
     #  STEP 6c 波浪理論輔助判讀（ZigZag，輔助非定論）
