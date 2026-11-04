@@ -287,11 +287,12 @@ def fetch_market_margin(days: int = 200) -> pd.DataFrame:
                          f"&start_date={start}", timeout=20).json()
         if m.get("status") == 200 and m["data"] and i.get("status") == 200 and i["data"]:
             mdf = pd.DataFrame(m["data"])
-            mdf = mdf[mdf["name"] == "MarginPurchaseMoney"][["date", "TodayBalance"]]
+            mdf = mdf[mdf["name"] == "MarginPurchaseMoney"][["date", "TodayBalance", "buy"]]
             mdf["money"] = pd.to_numeric(mdf["TodayBalance"], errors="coerce") / 1e8
+            mdf["buy"] = pd.to_numeric(mdf["buy"], errors="coerce").fillna(0) / 1e8
             idf = pd.DataFrame(i["data"])[["date", "close"]].rename(columns={"close": "index"})
             idf["index"] = pd.to_numeric(idf["index"], errors="coerce")
-            df = mdf[["date", "money"]].merge(idf, on="date").dropna()
+            df = mdf[["date", "money", "buy"]].merge(idf, on="date").dropna()
             df = df[(df["money"] > 0) & (df["index"] > 0)]
             df["date"] = pd.to_datetime(df["date"])
             return df.sort_values("date").reset_index(drop=True)
@@ -601,6 +602,107 @@ def calc_market_margin(df: pd.DataFrame) -> dict | None:
         "level": level, "color": color, "text": text,
         "rel": margin_price_relation(margin_chg, index_chg, "加權指數", "市場散戶"), "view": view,
     }
+
+
+MAINT_CALL = 130     # 追繳線
+MAINT_WARMUP = 40    # 推算至少要這麼多個交易日，期初假設的影響才會被新增融資稀釋
+
+
+def calc_stock_maintenance(margin_df: pd.DataFrame, price_df: pd.DataFrame, loan_ratio: float) -> dict | None:
+    """
+    個股融資維持率（估算）：用每日新增融資張數×當日收盤，以平均成本法推算融資平均成本，
+    維持率＝股價÷(融資成數×平均成本)。loan_ratio：上市 0.6、上櫃 0.5
+    """
+    need = {"MarginPurchaseTodayBalance", "MarginPurchaseBuy"}
+    if margin_df.empty or price_df.empty or not need.issubset(margin_df.columns):
+        return None
+    close = price_df.set_index("date")["close"]
+    m = margin_df.sort_values("date")
+    m = m[m["date"].isin(close.index)].dropna(subset=["MarginPurchaseTodayBalance"])
+    if len(m) < MAINT_WARMUP:
+        return None
+    last = m.iloc[-1]
+    if not last["MarginPurchaseTodayBalance"] > 0 or not (last.get("MarginPurchaseLimit") or 0) > 0:
+        return None
+    bal = float(m.iloc[0]["MarginPurchaseTodayBalance"])
+    avg = float(close[m.iloc[0]["date"]])
+    for _, r in m.iloc[1:].iterrows():
+        p = float(close[r["date"]])
+        buy = float(r["MarginPurchaseBuy"] or 0)
+        repay = max(0.0, bal + buy - float(r["MarginPurchaseTodayBalance"]))
+        rem = max(0.0, bal - repay)
+        if rem + buy > 0:
+            avg = (rem * avg + buy * p) / (rem + buy)
+        bal = float(r["MarginPurchaseTodayBalance"])
+    price = float(price_df.sort_values("date").iloc[-1]["close"])
+    ratio = price / (loan_ratio * avg) * 100
+    call_price = MAINT_CALL / 100 * loan_ratio * avg
+    call_dist = (price - call_price) / price * 100
+    entry = 100 / loan_ratio
+    cp, cd = f"{call_price:,.1f}", f"{call_dist:.1f}"
+    if ratio < MAINT_CALL:
+        level, color = "跌破追繳線", "#e74c3c"
+        text = f"估算維持率 {ratio:.1f}% 已跌破 130% 追繳線，融資戶普遍被追繳，補不出錢就會被斷頭賣出，短線容易出現斷頭賣壓；斷頭潮過後籌碼反而會被洗清，可等止跌訊號。"
+    elif ratio < 140:
+        level, color = "危險：接近追繳", "#e74c3c"
+        text = f"估算維持率 {ratio:.1f}%，離 130% 追繳線很近，股價再跌約 {cd}%（{cp} 元）就會觸發大量追繳，要小心多殺多。"
+    elif ratio < 150:
+        level, color = "警戒", "#e67e22"
+        text = f"估算維持率 {ratio:.1f}%，融資戶平均已明顯虧損；股價若續跌到 {cp} 元附近（再跌 {cd}%）將觸發追繳。"
+    elif ratio < entry:
+        level, color = "正常（融資戶平均小賠）", "#2e86c1"
+        text = f"估算維持率 {ratio:.1f}%，融資戶平均小幅虧損，離追繳價 {cp} 元還有 {cd}% 空間，暫無斷頭壓力。"
+    else:
+        level, color = "安全（融資戶平均獲利）", "#27ae60"
+        text = f"估算維持率 {ratio:.1f}%，融資戶平均處於獲利，沒有斷頭壓力；融資獲利多時也要留意獲利了結的賣壓。"
+    return {"avg": avg, "price": price, "ratio": ratio, "call_price": call_price, "call_dist": call_dist,
+            "entry": entry, "loan_ratio": loan_ratio, "days": len(m), "level": level, "color": color, "text": text}
+
+
+def calc_market_maintenance(df: pd.DataFrame) -> dict | None:
+    """大盤融資維持率（估算）：每天依加權指數漲跌調整擔保品市值，扣掉還款對應部位、加上新增融資買進的市值"""
+    if df.empty or "buy" not in df.columns or len(df) < MAINT_WARMUP + MARGIN_CHG_N:
+        return None
+    loan = 0.6
+    L, prev = float(df.iloc[0]["money"]), float(df.iloc[0]["index"])
+    C = L / loan
+    dates, ratios = [], []
+    for _, r in df.iloc[1:].iterrows():
+        C *= float(r["index"]) / prev
+        prev = float(r["index"])
+        repay = max(0.0, L + float(r["buy"]) - float(r["money"]))
+        if L > 0:
+            C -= C * min(1.0, repay / L)
+        C += float(r["buy"]) / loan
+        L = float(r["money"])
+        dates.append(r["date"])
+        ratios.append(C / L * 100)
+    view = pd.DataFrame({"date": dates, "ratio": ratios}).iloc[MAINT_WARMUP - 1:]   # 去掉暖身期
+    ratio = float(view["ratio"].iloc[-1])
+    recent = view["ratio"].tail(MARGIN_CHG_N)
+    min20, chg20 = float(recent.min()), ratio - float(recent.iloc[0])
+    if ratio < MAINT_CALL:
+        level, color = "大盤斷頭潮", "#e74c3c"
+        text = f"大盤估算維持率 {ratio:.1f}% 跌破 130% 追繳線，市場出現追繳斷頭潮，常伴隨恐慌急殺。歷史上斷頭潮之後常是中期低點區，但要等指數止跌再進場，不要接刀。"
+    elif ratio < 140:
+        level, color = "大盤恐慌區", "#e74c3c"
+        text = f"大盤估算維持率 {ratio:.1f}%，低於 140% 進入恐慌區，追繳壓力很大，指數再跌容易引發連鎖斷頭；同時也是籌碼加速洗清、接近落底的階段。"
+    elif ratio < 150:
+        level, color = "大盤警戒", "#e67e22"
+        text = f"大盤估算維持率 {ratio:.1f}%，融資戶整體虧損擴大，若指數續跌，追繳賣壓會開始加速。"
+    elif ratio < 166.7:
+        level, color = "大盤正常偏低", "#2e86c1"
+        text = f"大盤估算維持率 {ratio:.1f}%，融資戶整體小幅虧損，還沒有明顯的追繳壓力。"
+    elif ratio < 175:
+        level, color = "大盤正常", "#27ae60"
+        text = f"大盤估算維持率 {ratio:.1f}%，融資戶整體處於獲利，沒有斷頭壓力。"
+    else:
+        level, color = "大盤融資獲利豐厚", "#e67e22"
+        text = f"大盤估算維持率 {ratio:.1f}%，融資戶整體獲利豐厚，散戶信心強；這種時候追價意願高，指數轉弱時獲利了結賣壓也會比較大。"
+    if chg20 <= -15:
+        text += f" 近 {MARGIN_CHG_N} 日維持率下降 {abs(chg20):.1f} 個百分點，下滑速度很快。"
+    return {"ratio": ratio, "min20": min20, "chg20": chg20, "date": view["date"].iloc[-1],
+            "view": view, "level": level, "color": color, "text": text}
 
 
 def dual_axis_fig(dates, a, b, title: str, a_name: str, b_name: str) -> go.Figure:
@@ -1011,6 +1113,8 @@ def build_html_report(rd: dict) -> str:
     <tr><td>評分細項</td><td>{rd.get("chip_tech_summary","N/A")}</td></tr>
     <tr><td>個股融資水位</td><td>{rd.get("margin_level","未評估")}</td></tr>
     <tr><td>大盤與融資水位</td><td>{rd.get("market_margin","未評估")}</td></tr>
+    <tr><td>個股融資維持率（估算）</td><td>{rd.get("stock_maint","未評估")}</td></tr>
+    <tr><td>大盤融資維持率（估算）</td><td>{rd.get("market_maint","未評估")}</td></tr>
     <tr><td>波浪理論輔助判讀</td><td>{rd.get("wave_note","未評估")}</td></tr>
   </table>
   <p style="font-size:12px;color:#888">資料來源：台灣證交所公開交易資訊（經FinMind彙整），固定門檻規則式評分，非AI主觀判斷</p>
@@ -1117,7 +1221,7 @@ def main():
     with st.spinner("載入股票清單…"):
         sl = fetch_stock_list()
 
-    sid, sname, industry = raw, raw, "N/A"
+    sid, sname, industry, market_type = raw, raw, "N/A", "twse"
     if not sl.empty:
         if raw.isdigit():
             m = sl[sl["stock_id"] == raw]
@@ -1127,6 +1231,7 @@ def main():
             sid = m.iloc[0]["stock_id"]
             sname = m.iloc[0]["stock_name"]
             industry = m.iloc[0].get("industry_category", "N/A")
+            market_type = m.iloc[0].get("type", "twse")
 
     rpt = st.session_state.rpt
     rpt.update({"stock_id": sid, "company_name": sname, "industry": industry})
@@ -1683,8 +1788,66 @@ def main():
                          else "與大盤相近")
                 st.markdown(f"📊 本股融資 {MARGIN_CHG_N} 日 {margin_lv['margin_chg']:+.1f}%，"
                             f"全市場融資 {mk['margin_chg']:+.1f}%：{judge}。")
-            st.caption("大盤融資維持率（斷頭警戒線約 130%）需 FinMind 付費會員，這裡改用融資餘額的水位與增減判斷。")
             rpt["market_margin"] = f"{mk['level']}：{mk['text']}　{mk['rel'][0]}{mk['rel'][1]}"
+
+        st.markdown("#### 融資維持率警示（估算）")
+        st.caption("融資維持率＝融資買進股票的市值÷向券商借的錢。剛買進時約 167%（上市借 6 成）或 200%（上櫃借 5 成），"
+                   "跌破 130% 會被追繳，補不足就被「斷頭」強制賣出。官方大盤維持率需 FinMind 付費會員，"
+                   "這裡用每日新增融資與當日價格推算融資平均成本（個股）、用加權指數漲跌推算融資擔保品市值（大盤），屬估算值；"
+                   "個股若被調降融資成數，實際維持率會不同。")
+        stock_maint = calc_stock_maintenance(fetch_margin_data(sid, 200), fetch_price_history(sid, 200),
+                                             0.5 if market_type == "tpex" else 0.6)
+        mkt_maint = calc_market_maintenance(fetch_market_margin(200))
+
+        alerts = []
+        if stock_maint and stock_maint["ratio"] < 150:
+            alerts.append(f"{sname} 估算融資維持率 **{stock_maint['ratio']:.1f}%**（{stock_maint['level']}），"
+                          f"追繳價約 {stock_maint['call_price']:,.1f} 元")
+        if mkt_maint and mkt_maint["ratio"] < 150:
+            alerts.append(f"大盤估算融資維持率 **{mkt_maint['ratio']:.1f}%**（{mkt_maint['level']}）")
+        if alerts:
+            st.error("🚨 **融資維持率警示**\n\n" + "\n".join(f"- {a}" for a in alerts))
+
+        if not stock_maint:
+            st.info("融資或股價資料不足（或本股不能融資），無法估算個股融資維持率")
+        else:
+            sm = stock_maint
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("個股估算維持率", f"{sm['ratio']:.1f}%",
+                      help=f"{'上櫃' if sm['loan_ratio'] == 0.5 else '上市'}融資 {sm['loan_ratio'] * 10:.0f} 成，買進時約 {sm['entry']:.0f}%")
+            m2.metric("融資平均成本（估）", f"{sm['avg']:,.1f} 元", help=f"目前股價 {sm['price']:,.1f} 元")
+            m3.metric("130% 追繳價（估）", f"{sm['call_price']:,.1f} 元",
+                      delta=f"再跌 {sm['call_dist']:.1f}% 觸發" if sm["call_dist"] > 0 else "已低於追繳價",
+                      delta_color="off")
+            m4.metric("推算天數", f"{sm['days']} 天", help="天數越多越準")
+            st.markdown(f'<div style="border:2px solid {sm["color"]};color:{sm["color"]};border-radius:10px;'
+                        f'padding:10px 14px;font-weight:600;margin:8px 0">🧮 {sm["level"]}</div>',
+                        unsafe_allow_html=True)
+            st.markdown(f'<div class="chip-box">{sm["text"]}</div>', unsafe_allow_html=True)
+            rpt["stock_maint"] = f"{sm['level']}：{sm['text']}"
+
+        if not mkt_maint:
+            st.info("大盤融資資料不足，無法估算大盤融資維持率")
+        else:
+            mm = mkt_maint
+            fig = go.Figure(go.Scatter(x=mm["view"]["date"], y=mm["view"]["ratio"], mode="lines",
+                                       name="估算維持率", line=dict(color="#2e86c1", width=2)))
+            for v, col, label in [(130, "#e74c3c", "130% 追繳線"), (140, "#ec7063", "140% 恐慌"), (150, "#e67e22", "150% 警戒")]:
+                fig.add_hline(y=v, line_dash="dash", line_color=col, annotation_text=label,
+                              annotation_position="bottom left")
+            fig.update_layout(height=280, plot_bgcolor="white", paper_bgcolor="white",
+                              title="大盤融資維持率（估算）", margin=dict(t=50, b=20), yaxis=dict(ticksuffix="%"))
+            st.plotly_chart(fig, width="stretch")
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("大盤估算維持率", f"{mm['ratio']:.1f}%", help=f"資料日 {mm['date']:%m-%d}")
+            m2.metric(f"近 {MARGIN_CHG_N} 日變化", f"{mm['chg20']:+.1f} 個百分點")
+            m3.metric(f"近 {MARGIN_CHG_N} 日最低", f"{mm['min20']:.1f}%")
+            m4.metric("距 130% 追繳線", f"{mm['ratio'] - MAINT_CALL:.1f} 個百分點")
+            st.markdown(f'<div style="border:2px solid {mm["color"]};color:{mm["color"]};border-radius:10px;'
+                        f'padding:10px 14px;font-weight:600;margin:8px 0">🚨 {mm["level"]}</div>',
+                        unsafe_allow_html=True)
+            st.markdown(f'<div class="chip-box">{mm["text"]}</div>', unsafe_allow_html=True)
+            rpt["market_maint"] = f"{mm['level']}：{mm['text']}"
 
     # ════════════════════════════════════════════════════════════
     #  STEP 6c 波浪理論輔助判讀（ZigZag，輔助非定論）

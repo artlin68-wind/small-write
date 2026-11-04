@@ -335,12 +335,18 @@
     <div class="card">
       <h2>💳 融資水位評估（個股＋大盤）</h2>
       <p class="caption">融資是散戶借錢買股。融資水位越高，籌碼越凌亂，股價回檔時容易因追繳、斷頭引發多殺多。個股看「融資使用率」（融資餘額÷融資限額）、融資餘額在近半年的相對位置、券資比，以及近 20 個交易日融資與股價的同步／背離；大盤看全市場融資餘額與加權指數的關係。固定規則計算，僅供參考。</p>
+      <div id="maintAlert"></div>
       <h3>個股融資水位</h3>
       <div class="chart-wrap"><div id="marginLvChartDiv"></div></div>
       <div id="marginLvNote"></div>
       <h3>大盤與融資水位的關係</h3>
       <div class="chart-wrap"><div id="mktMarginChartDiv"></div></div>
       <div id="mktMarginNote"></div>
+      <h3>融資維持率警示（估算）</h3>
+      <p class="caption">融資維持率＝融資買進股票的市值÷向券商借的錢。剛買進時約 167%（上市借 6 成）或 200%（上櫃借 5 成），跌破 <b>130%</b> 會被追繳，補不足就被「斷頭」強制賣出。官方大盤維持率需 FinMind 付費會員，這裡用每日新增融資與當日價格推算融資平均成本（個股）、用加權指數漲跌推算融資擔保品市值（大盤），屬估算值；個股若被調降融資成數，實際維持率會不同。</p>
+      <div id="maintStockNote"></div>
+      <div class="chart-wrap"><div id="maintChartDiv"></div></div>
+      <div id="maintMktNote"></div>
     </div>
 
     <div class="card">
@@ -529,6 +535,7 @@ async function fetchMargin(stockId, days = 200) {
       balance: Number(r.MarginPurchaseTodayBalance),
       limit: Number(r.MarginPurchaseLimit) || 0,
       short: Number(r.ShortSaleTodayBalance) || 0,
+      buy: Number(r.MarginPurchaseBuy) || 0,
     }))
     .filter(r => !isNaN(r.balance))
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -546,7 +553,7 @@ async function fetchMarketMargin(days = 200) {
   const closeByDate = new Map(idx.map(r => [r.date, Number(r.close)]));
   const rows = mkt
     .filter(r => r.name === "MarginPurchaseMoney")
-    .map(r => ({ date: r.date, money: Number(r.TodayBalance) / 1e8, index: closeByDate.get(r.date) }))
+    .map(r => ({ date: r.date, money: Number(r.TodayBalance) / 1e8, buy: (Number(r.buy) || 0) / 1e8, index: closeByDate.get(r.date) }))
     .filter(r => r.money > 0 && r.index > 0)
     .sort((a, b) => a.date.localeCompare(b.date));
   if (rows.length) marketMarginCache = { day, rows };
@@ -1147,6 +1154,67 @@ function calcMarketMargin(rows) {
   return { last, ref, marginChg, indexChg, pos, idxPos, level, color, text, rel, view };
 }
 
+const MAINT_CALL = 130;     // 追繳線
+const MAINT_WARMUP = 40;   // 推算至少要這麼多個交易日，期初假設的影響才會被新增融資稀釋
+
+// 個股：用每日新增融資張數×當日收盤，以平均成本法推算融資平均成本；
+// 維持率＝股價÷(融資成數×平均成本)。loanRatio：上市 0.6、上櫃 0.5
+function calcStockMaintenance(marginRows, priceRows, loanRatio) {
+  const closeByDate = new Map(priceRows.map(r => [r.date, r.close]));
+  const rows = marginRows.filter(r => closeByDate.has(r.date));
+  if (rows.length < MAINT_WARMUP || !(lastOf(rows).balance > 0) || !(lastOf(rows).limit > 0)) return null;
+  let bal = rows[0].balance, avg = closeByDate.get(rows[0].date);
+  for (const r of rows.slice(1)) {
+    const p = closeByDate.get(r.date);
+    const repay = Math.max(0, bal + r.buy - r.balance), rem = Math.max(0, bal - repay);
+    if (rem + r.buy > 0) avg = (rem * avg + r.buy * p) / (rem + r.buy);
+    bal = r.balance;
+  }
+  const price = lastOf(priceRows).close;
+  const ratio = price / (loanRatio * avg) * 100;
+  const callPrice = MAINT_CALL / 100 * loanRatio * avg;
+  const callDist = (price - callPrice) / price * 100;
+  const entry = 100 / loanRatio;
+  const r1 = ratio.toFixed(1), cp = fmtP(callPrice), cd = callDist.toFixed(1);
+  let level, color, text;
+  if (ratio < MAINT_CALL) { level = "跌破追繳線"; color = "#ff5c5c"; text = `估算維持率 ${r1}% 已跌破 130% 追繳線，融資戶普遍被追繳，補不出錢就會被斷頭賣出，短線容易出現斷頭賣壓；斷頭潮過後籌碼反而會被洗清，可等止跌訊號。`; }
+  else if (ratio < 140) { level = "危險：接近追繳"; color = "#ff5c5c"; text = `估算維持率 ${r1}%，離 130% 追繳線很近，股價再跌約 ${cd}%（${cp} 元）就會觸發大量追繳，要小心多殺多。`; }
+  else if (ratio < 150) { level = "警戒"; color = "#f39c4a"; text = `估算維持率 ${r1}%，融資戶平均已明顯虧損；股價若續跌到 ${cp} 元附近（再跌 ${cd}%）將觸發追繳。`; }
+  else if (ratio < entry) { level = "正常（融資戶平均小賠）"; color = "#8fb4ff"; text = `估算維持率 ${r1}%，融資戶平均小幅虧損，離追繳價 ${cp} 元還有 ${cd}% 空間，暫無斷頭壓力。`; }
+  else { level = "安全（融資戶平均獲利）"; color = "#3ecf74"; text = `估算維持率 ${r1}%，融資戶平均處於獲利，沒有斷頭壓力；融資獲利多時也要留意獲利了結的賣壓。`; }
+  return { avg, price, ratio, callPrice, callDist, entry, loanRatio, days: rows.length, level, color, text };
+}
+
+// 大盤：從融資金額推算擔保品市值——每天先依加權指數漲跌調整，再扣掉還款對應的部位、加上新增融資買進的市值
+function calcMarketMaintenance(rows) {
+  if (rows.length < MAINT_WARMUP + MARGIN_CHG_N) return null;
+  const LOAN = 0.6;
+  let L = rows[0].money, C = L / LOAN, prev = rows[0].index;
+  const series = [];
+  for (const r of rows.slice(1)) {
+    C *= r.index / prev; prev = r.index;
+    const repay = Math.max(0, L + r.buy - r.money);
+    if (L > 0) C -= C * Math.min(1, repay / L);
+    C += r.buy / LOAN;
+    L = r.money;
+    series.push({ date: r.date, ratio: C / L * 100 });
+  }
+  const view = series.slice(MAINT_WARMUP - 1);   // 去掉暖身期
+  const ratio = lastOf(view).ratio, recent = view.slice(-MARGIN_CHG_N);
+  const min20 = Math.min(...recent.map(s => s.ratio));
+  const chg20 = ratio - recent[0].ratio;
+  const r1 = ratio.toFixed(1);
+  let level, color, text;
+  if (ratio < MAINT_CALL) { level = "大盤斷頭潮"; color = "#ff5c5c"; text = `大盤估算維持率 ${r1}% 跌破 130% 追繳線，市場出現追繳斷頭潮，常伴隨恐慌急殺。歷史上斷頭潮之後常是中期低點區，但要等指數止跌再進場，不要接刀。`; }
+  else if (ratio < 140) { level = "大盤恐慌區"; color = "#ff5c5c"; text = `大盤估算維持率 ${r1}%，低於 140% 進入恐慌區，追繳壓力很大，指數再跌容易引發連鎖斷頭；同時也是籌碼加速洗清、接近落底的階段。`; }
+  else if (ratio < 150) { level = "大盤警戒"; color = "#f39c4a"; text = `大盤估算維持率 ${r1}%，融資戶整體虧損擴大，若指數續跌，追繳賣壓會開始加速。`; }
+  else if (ratio < 166.7) { level = "大盤正常偏低"; color = "#8fb4ff"; text = `大盤估算維持率 ${r1}%，融資戶整體小幅虧損，還沒有明顯的追繳壓力。`; }
+  else if (ratio < 175) { level = "大盤正常"; color = "#3ecf74"; text = `大盤估算維持率 ${r1}%，融資戶整體處於獲利，沒有斷頭壓力。`; }
+  else { level = "大盤融資獲利豐厚"; color = "#f39c4a"; text = `大盤估算維持率 ${r1}%，融資戶整體獲利豐厚，散戶信心強；這種時候追價意願高，指數轉弱時獲利了結賣壓也會比較大。`; }
+  if (chg20 <= -15) text += ` 近 ${MARGIN_CHG_N} 日維持率下降 ${Math.abs(chg20).toFixed(1)} 個百分點，下滑速度很快。`;
+  return { ratio, min20, chg20, date: lastOf(view).date, view, level, color, text };
+}
+
 // ══════════════════════════════════════════════════════════════
 //  SVG 繪圖工具（自製，不依賴外部函式庫）
 // ══════════════════════════════════════════════════════════════
@@ -1467,6 +1535,31 @@ function renderDualLineSVG(elId, dates, a, b, title, aLabel, bLabel, fmtA, fmtB)
   };
   svg += line(b, B, colB, 1.8) + line(a, A, colA, 1.4);
   svg += xLabelsSvg(dates, padT, plotH, plotW, step);
+  document.getElementById(elId).innerHTML =
+    `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" xmlns="${svgNS}">${svg}</svg>`;
+}
+
+function renderMaintChartSVG(elId, series) {
+  const W = chartW(), H = chartH(240), padT = 34, padB = 22, padR = 40;
+  const n = series.length, plotW = W - PAD.L - padR, plotH = H - padT - padB, step = plotW / n;
+  const cx = i => PAD.L + step * (i + 0.5);
+  const vals = series.map(s => s.ratio);
+  const lo = Math.min(125, ...vals) - 3, hi = Math.max(170, ...vals) + 3;
+  const y = v => padT + (1 - (v - lo) / (hi - lo)) * plotH;
+  let svg = `<text x="${W / 2}" y="18" font-size="${titleFs(W)}" fill="#8fb4ff" text-anchor="middle" font-weight="700">大盤融資維持率（估算）</text>`;
+  [[130, "#ff5c5c", "130% 追繳線"], [140, "#ff7a7a", "140% 恐慌"], [150, "#f39c4a", "150% 警戒"]].forEach(([v, col, label]) => {
+    const yy = y(v).toFixed(1);
+    svg += `<line x1="${PAD.L}" y1="${yy}" x2="${W - padR}" y2="${yy}" stroke="${col}" stroke-width="1" stroke-dasharray="4 3"/>`;
+    svg += `<text x="${W - padR + 4}" y="${(+yy + 3).toFixed(1)}" font-size="10" fill="${col}">${v}%</text>`;
+    svg += `<text x="${PAD.L + 4}" y="${(+yy - 3).toFixed(1)}" font-size="10" fill="${col}">${label}</text>`;
+  });
+  niceTicks(lo, hi, 4).forEach(t => {
+    svg += `<text x="${PAD.L - 6}" y="${(y(t) + 3).toFixed(1)}" font-size="10" fill="#a3adbd" text-anchor="end">${t.toFixed(0)}%</text>`;
+  });
+  const pts = series.map((s, i) => `${cx(i).toFixed(1)},${y(s.ratio).toFixed(1)}`).join(" ");
+  svg += `<polyline points="${pts}" fill="none" stroke="#5b9bff" stroke-width="1.8"/>`;
+  svg += `<circle cx="${cx(n - 1).toFixed(1)}" cy="${y(lastOf(series).ratio).toFixed(1)}" r="4" fill="#5b9bff" stroke="#0f141c" stroke-width="1.5"/>`;
+  svg += xLabelsSvg(series.map(s => s.date), padT, plotH, plotW, step);
   document.getElementById(elId).innerHTML =
     `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" xmlns="${svgNS}">${svg}</svg>`;
 }
@@ -2769,7 +2862,9 @@ async function runAnalysis() {
     // 融資水位（個股＋大盤）
     const marginLv = calcMarginLevel(marginRows, priceRows);
     const mktMargin = calcMarketMargin(mktMarginRows);
-    renderMarginLevel(marginLv, mktMargin, priceRows, sname);
+    const stockMaint = calcStockMaintenance(marginRows, priceRows, hit && hit.type === "tpex" ? 0.5 : 0.6);
+    const mktMaint = calcMarketMaintenance(mktMarginRows);
+    renderMarginLevel(marginLv, mktMargin, priceRows, sname, stockMaint, mktMaint);
 
     // 匯率關聯
     renderFxEval(fx, sname);
@@ -2794,7 +2889,7 @@ async function runAnalysis() {
       renderPriceChartSVG(priceRows, sname);
       renderFundamentalCharts();
       renderFxEval(fx, sname);
-      renderMarginLevel(marginLv, mktMargin, priceRows, sname);
+      renderMarginLevel(marginLv, mktMargin, priceRows, sname, stockMaint, mktMaint);
       updateWave(priceRows, sname);
       updateFib(priceRows, sname);
     };
@@ -2829,9 +2924,10 @@ function updateWave(priceRows, sname) {
   }
 }
 
-function renderMarginLevel(lv, mkt, priceRows, sname) {
+function renderMarginLevel(lv, mkt, priceRows, sname, sm, mm) {
   const lotFmt = v => Math.round(v).toLocaleString();
   const verdict = (o, icon) => `<div class="verdict" style="background:${o.color}18;border-color:${o.color};color:${o.color}">${icon} ${o.level}</div>`;
+  renderMaintenance(sm, mm, sname, verdict);
   const relHtml = r => `<div class="item-row">${r.icon} ${r.text}</div>`;
 
   const stockChart = document.getElementById("marginLvChartDiv"), stockNote = document.getElementById("marginLvNote");
@@ -2886,7 +2982,41 @@ function renderMarginLevel(lv, mkt, priceRows, sname) {
     verdict(mkt, "🏛️") +
     `<div class="chip-box">${mkt.text}</div>` +
     `<div class="item-row"><b>近 ${MARGIN_CHG_N} 個交易日融資 vs 加權指數：</b></div>` + relHtml(mkt.rel) + vsTxt +
-    `<p class="caption">大盤融資維持率（斷頭警戒線約 130%）需 FinMind 付費會員，這裡改用融資餘額的水位與增減判斷。</p>`;
+    "";
+}
+
+function renderMaintenance(sm, mm, sname, verdict) {
+  // 卡片頂端警示：個股或大盤估算維持率低於 150% 時特別提醒
+  const alerts = [];
+  if (sm && sm.ratio < 150) alerts.push(`${esc(sname)} 估算融資維持率 <b>${sm.ratio.toFixed(1)}%</b>（${sm.level}），追繳價約 ${fmtP(sm.callPrice)} 元`);
+  if (mm && mm.ratio < 150) alerts.push(`大盤估算融資維持率 <b>${mm.ratio.toFixed(1)}%</b>（${mm.level}）`);
+  document.getElementById("maintAlert").innerHTML = alerts.length
+    ? `<div class="warn-box"><b>🚨 融資維持率警示</b><ul class="flag-list">${alerts.map(a => `<li>${a}</li>`).join("")}</ul></div>` : "";
+
+  const sEl = document.getElementById("maintStockNote");
+  sEl.innerHTML = !sm
+    ? `<div class="info-box">融資或股價資料不足（或本股不能融資），無法估算個股融資維持率</div>`
+    : `<div class="metric-grid">` +
+      metricHtml("個股估算維持率", `${sm.ratio.toFixed(1)}%`, `${sm.loanRatio === 0.5 ? "上櫃" : "上市"}融資 ${sm.loanRatio * 10} 成，買進時約 ${sm.entry.toFixed(0)}%`) +
+      metricHtml("融資平均成本（估）", `${fmtP(sm.avg)} 元`, `目前股價 ${fmtP(sm.price)} 元`) +
+      metricHtml("130% 追繳價（估）", `${fmtP(sm.callPrice)} 元`, sm.callDist > 0 ? `再跌 ${sm.callDist.toFixed(1)}% 觸發` : "已低於追繳價", sm.callDist < 10 ? "#ff7a7a" : undefined) +
+      metricHtml("推算天數", `${sm.days} 天`, "天數越多越準") +
+      `</div>` + verdict(sm, "🧮") + `<div class="chip-box">${sm.text}</div>`;
+
+  const mEl = document.getElementById("maintMktNote"), cEl = document.getElementById("maintChartDiv");
+  if (!mm) {
+    cEl.innerHTML = "";
+    mEl.innerHTML = `<div class="info-box">大盤融資資料不足，無法估算大盤融資維持率</div>`;
+    return;
+  }
+  renderMaintChartSVG("maintChartDiv", mm.view);
+  mEl.innerHTML =
+    `<div class="metric-grid">` +
+    metricHtml("大盤估算維持率", `${mm.ratio.toFixed(1)}%`, `資料日 ${mm.date.slice(5)}`) +
+    metricHtml(`近 ${MARGIN_CHG_N} 日變化`, `${signed(mm.chg20, 1)} 個百分點`, undefined) +
+    metricHtml(`近 ${MARGIN_CHG_N} 日最低`, `${mm.min20.toFixed(1)}%`) +
+    metricHtml("距 130% 追繳線", `${(mm.ratio - MAINT_CALL).toFixed(1)} 個百分點`, undefined, mm.ratio < 140 ? "#ff7a7a" : undefined) +
+    `</div>` + verdict(mm, "🚨") + `<div class="chip-box">${mm.text}</div>`;
 }
 
 function updateFib(priceRows, sname) {
