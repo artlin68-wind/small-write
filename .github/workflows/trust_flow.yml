@@ -1,0 +1,53 @@
+name: 更新投信買賣資金產業分布
+
+on:
+  schedule:
+    # 週一到週五 11:00 UTC（台灣時間 19:00）；證交所 T86 約下午 4～5 點公布
+    - cron: "0 11 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      backfill:
+        description: "要補幾個交易日的歷史（例如 40），留空則只補最近幾天"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: trust_flow
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 抓投信買賣資料
+        env:
+          BACKFILL: ${{ github.event.inputs.backfill }}
+        run: |
+          if [ -n "$BACKFILL" ]; then
+            python scripts/fetch_trust_flow.py backfill "$BACKFILL"
+          else
+            python scripts/fetch_trust_flow.py daily
+          fi
+
+      - name: Commit 資料
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add data/trust_flow
+          if git diff --cached --quiet; then
+            echo "資料沒有變化"
+          else
+            git commit -m "Update investment trust flow data"
+            git pull --rebase
+            git push
+          fi

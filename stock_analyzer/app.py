@@ -350,6 +350,41 @@ def fetch_futures_data() -> dict:
     return out
 
 
+TRUST_DIR = Path(__file__).resolve().parent.parent / "data" / "trust_flow"
+TRUST_PERIODS = [1, 5, 20]
+TRUST_TOP_N = 3     # 產業前幾名算「集中流入／流出」
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def load_trust_flow(mtime: float) -> dict | None:
+    """
+    投信買賣資金產業分布：讀 scripts/fetch_trust_flow.py 存在 data/trust_flow 的資料
+    （證交所 T86／櫃買中心三大法人＋收盤價，金額＝股數×收盤價，估算）。mtime 只用來讓檔案更新後快取失效。
+    """
+    try:
+        summary = json.loads((TRUST_DIR / "summary.json").read_text(encoding="utf-8"))
+        imap_path = TRUST_DIR / "industry_map.json"
+        imap = json.loads(imap_path.read_text(encoding="utf-8")) if imap_path.exists() else {}
+        days = {}
+        for d in summary["dates"][-max(TRUST_PERIODS):]:
+            p = TRUST_DIR / "days" / f"{d}.json"
+            if p.exists():
+                days[d] = json.loads(p.read_text(encoding="utf-8"))["stocks"]
+        return {"summary": summary, "imap": imap, "days": days}
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def update_trust_flow_data(backfill: int | None = None) -> str:
+    """呼叫 scripts/fetch_trust_flow.py 下載最新資料，存進 data/trust_flow"""
+    import subprocess
+    import sys
+    script = TRUST_DIR.parent.parent / "scripts" / "fetch_trust_flow.py"
+    args = [sys.executable, "-X", "utf8", str(script)] + (["backfill", str(backfill)] if backfill else ["daily"])
+    r = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900)
+    return (r.stdout + r.stderr).strip()
+
+
 @st.cache_data(ttl=3_600, show_spinner=False)
 def fetch_institutional_data(stock_id: str, days: int = 40) -> pd.DataFrame:
     """三大法人（外資／投信／自營商）買賣超，來源：台灣證交所公開交易資訊（經 FinMind 彙整）"""
@@ -863,6 +898,116 @@ def calc_open_interest(oi: pd.DataFrame, fp: dict | None) -> dict | None:
             "level": level, "color": color, "text": text, "rel": rel}
 
 
+def _yi(v: float) -> str:
+    return f"{v:,.{0 if abs(v) >= 100 else 1}f} 億"
+
+
+def _signed_yi(v: float) -> str:
+    return f"{'+' if v >= 0 else '−'}{_yi(abs(v))}"
+
+
+def calc_trust_flow(data: dict, n: int, stock_id: str, stock_ind: str) -> dict | None:
+    """投信各產業買進／賣出金額（億元）、排名、本股所屬產業的位置與加減碼、產業內買賣最多的個股"""
+    summary = data["summary"]
+    dates = summary["dates"]
+    if not dates:
+        return None
+    n = min(n, len(dates))
+    frm = len(dates) - n
+
+    def rng(arr, a, b):
+        return sum(x[0] for x in arr[a:b]), sum(x[1] for x in arr[a:b])
+
+    etf, rows = None, []
+    for name, arr in summary["industries"].items():
+        buy, sell = rng(arr, frm, len(dates))
+        prev = rng(arr, frm - n, frm) if frm - n >= 0 else None   # 前一段同長度期間，看加碼／減碼
+        r = {"產業": name, "買進": buy, "賣出": sell, "淨額": buy - sell,
+             "prev": (prev[0] - prev[1]) if prev else None, "stocks": []}
+        if name == summary.get("etf"):
+            etf = r
+        elif buy + sell > 0.01:
+            rows.append(r)
+    if not rows:
+        return None
+    rows.sort(key=lambda r: -r["淨額"])
+    tot_buy, tot_sell = sum(r["買進"] for r in rows), sum(r["賣出"] for r in rows)
+    for i, r in enumerate(rows):
+        r["排名"] = i + 1
+        r["佔總買進%"] = r["買進"] / tot_buy * 100 if tot_buy else 0
+        r["佔總賣出%"] = r["賣出"] / tot_sell * 100 if tot_sell else 0
+
+    # 個股：期間內加總（萬元 → 億元）
+    by_stock: dict[str, dict] = {}
+    used = [d for d in dates[frm:] if d in data["days"]]
+    for d in used:
+        for sid_, name, ind_, b, s_ in data["days"][d]:
+            o = by_stock.setdefault(sid_, {"id": sid_, "name": name, "ind": ind_, "buy": 0.0, "sell": 0.0})
+            o["buy"] += b / 1e4
+            o["sell"] += s_ / 1e4
+    by_ind = {r["產業"]: r for r in rows}
+    for o in by_stock.values():
+        o["net"] = o["buy"] - o["sell"]
+        if o["ind"] in by_ind:
+            by_ind[o["ind"]]["stocks"].append(o)
+    for r in rows:
+        r["stocks"].sort(key=lambda o: -o["net"])
+
+    me = by_stock.get(stock_id)
+    ind = by_ind.get(stock_ind) or (by_ind.get(me["ind"]) if me else None)
+    inflow = [r for r in rows if r["淨額"] > 0]
+    outflow = [r for r in reversed(rows) if r["淨額"] < 0]
+    pos_sum = sum(r["淨額"] for r in inflow)
+    top_share = sum(r["淨額"] for r in inflow[:TRUST_TOP_N]) / pos_sum * 100 if pos_sum else 0
+    period = f"{dates[-1][5:]} 單日" if n == 1 else f"近 {n} 個交易日"
+
+    def names(lst):
+        return "、".join(f"{r['產業']}（{_signed_yi(r['淨額'])}）" for r in lst[:TRUST_TOP_N]) or "無"
+
+    lines = [f"{period}投信在各產業共買進 {_yi(tot_buy)}、賣出 {_yi(tot_sell)}，"
+             f"淨{'買' if tot_buy >= tot_sell else '賣'} {_yi(abs(tot_buy - tot_sell))}。",
+             f"💰 資金流入最多：{names(inflow)}",
+             f"💸 資金流出最多：{names(outflow)}"]
+    if inflow:
+        conc = ("投信資金高度集中在少數產業，族群輪動效應明顯" if top_share >= 70
+                else "資金有一定集中度" if top_share >= 45 else "資金分散在多個產業")
+        lines.append(f"前 {TRUST_TOP_N} 大流入產業佔全部淨流入的 {top_share:.0f}%，{conc}。")
+    if etf and etf["買進"] + etf["賣出"] > 0.01:
+        lines.append(f"📦 {etf['產業']}（不列入排名）：買進 {_yi(etf['買進'])}、賣出 {_yi(etf['賣出'])}，"
+                     "ETF 不屬於單一產業，僅供參考。")
+
+    level, color, ind_lines = "投信產業資金分布", "#2e86c1", []
+    if ind:
+        trend = ""
+        if ind["prev"] is not None:
+            th = max(1, abs(ind["prev"]) * 0.3)
+            word = "加碼" if ind["淨額"] - ind["prev"] >= th else "減碼" if ind["prev"] - ind["淨額"] >= th else "相近"
+            trend = f"，{'與' if word == '相近' else '比'}前 {n} 日（{_signed_yi(ind['prev'])}）{word}"
+        t = (f"本股所屬「{ind['產業']}」{period}投信買進 {_yi(ind['買進'])}、賣出 {_yi(ind['賣出'])}，"
+             f"淨額 {_signed_yi(ind['淨額'])}，在 {len(rows)} 個產業中排第 {ind['排名']} 名"
+             f"（佔投信總買進 {ind['佔總買進%']:.1f}%）{trend}。")
+        if ind["淨額"] > 0 and ind["排名"] <= TRUST_TOP_N:
+            level, color = f"投信資金集中流入「{ind['產業']}」", "#27ae60"
+            t += "產業有投信資金撐腰，族群輪動對本股有利。"
+        elif ind["淨額"] < 0 and ind["排名"] > len(rows) - TRUST_TOP_N:
+            level, color = f"投信資金正撤出「{ind['產業']}」", "#e74c3c"
+            t += "投信在這個產業是主要賣方，族群面短線有壓力。"
+        elif ind["淨額"] > 0:
+            level = f"投信小幅買進「{ind['產業']}」"
+        else:
+            level, color = f"投信小幅賣出「{ind['產業']}」", "#e67e22"
+        ind_lines.append(t)
+    if me:
+        rank = (f"，在產業內 {len(ind['stocks'])} 檔投信有交易的股票中排第 {ind['stocks'].index(me) + 1} 名"
+                if ind and me in ind["stocks"] and len(ind["stocks"]) > 1 else "")
+        ind_lines.append(f"本股投信{period}買進 {_yi(me['buy'])}、賣出 {_yi(me['sell'])}，淨額 {_signed_yi(me['net'])}{rank}。")
+    elif ind:
+        ind_lines.append(f"本股{period}沒有投信買賣紀錄。")
+    return {"n": n, "period": period, "dates": dates[frm:], "rows": rows, "etf": etf, "tot_buy": tot_buy,
+            "tot_sell": tot_sell, "ind": ind, "me": me, "level": level, "color": color,
+            "lines": lines, "ind_lines": ind_lines, "complete": len(used) == n, "updated": summary.get("updated", "")}
+
+
 def dual_axis_fig(dates, a, b, title: str, a_name: str, b_name: str) -> go.Figure:
     """雙軸折線：a 用左軸、b 用右軸"""
     fig = go.Figure()
@@ -1275,6 +1420,7 @@ def build_html_report(rd: dict) -> str:
     <tr><td>大盤融資維持率（估算）</td><td>{rd.get("market_maint","未評估")}</td></tr>
     <tr><td>外資期貨空單水位</td><td>{rd.get("futures_pos","未評估")}</td></tr>
     <tr><td>台指期未平倉</td><td>{rd.get("futures_oi","未評估")}</td></tr>
+    <tr><td>投信產業資金分布</td><td>{rd.get("trust_flow","未評估")}</td></tr>
     <tr><td>波浪理論輔助判讀</td><td>{rd.get("wave_note","未評估")}</td></tr>
   </table>
   <p style="font-size:12px;color:#888">資料來源：台灣證交所公開交易資訊（經FinMind彙整），固定門檻規則式評分，非AI主觀判斷</p>
@@ -1328,6 +1474,7 @@ def sidebar() -> tuple[str, bool]:
 🔬 STEP 6b　籌碼技術評分
 💳 STEP 6b+　融資水位評估
 📉 STEP 6b++　期貨空單＋未平倉
+🏭 STEP 6b+++　投信產業資金
 🌊 STEP 6c　波浪輔助判讀
 📸 STEP 6d　截圖AI解讀
 📅 STEP 7　投資策略
@@ -2072,6 +2219,92 @@ def main():
             st.markdown(f"**近 {MARGIN_CHG_N} 個交易日價格 vs 未平倉：**")
             st.markdown(f"{oi['rel'][0]} {oi['rel'][1]}")
             rpt["futures_oi"] = f"{oi['level']}：{oi['text']}　{oi['rel'][0]}{oi['rel'][1]}"
+
+    # ════════════════════════════════════════════════════════════
+    #  STEP 6b+++ 投信買盤／賣盤資金產業分布（大盤）
+    # ════════════════════════════════════════════════════════════
+    st.markdown("---")
+    with st.expander("🏭 STEP 6b+++ ｜ 投信買盤／賣盤資金產業分布（大盤）", expanded=False):
+        st.caption("把全市場（上市＋上櫃）每檔股票的投信買進、賣出依官方產業別加總，看投信的錢流進哪些產業、從哪些產業撤出。"
+                   "官方只公布買賣股數，金額＝股數×當日收盤價，屬估算值；ETF／ETN 另外列示、不列入排名。"
+                   "資料由 scripts/fetch_trust_flow.py 從證交所、櫃買中心下載，存在 data/trust_flow（每個交易日晚上 7 點後可更新）。")
+        c_up, c_bf = st.columns(2)
+        if c_up.button("⬇️ 下載最新投信資料", key="trust_update"):
+            with st.spinner("下載中（證交所有流量限制，每天約 15 秒）…"):
+                st.code(update_trust_flow_data() or "完成")
+        if c_bf.button("⬇️ 補近 20 個交易日（約 5 分鐘）", key="trust_backfill"):
+            with st.spinner("補歷史資料中…"):
+                st.code(update_trust_flow_data(20) or "完成")
+        summary_path = TRUST_DIR / "summary.json"
+        tdata = load_trust_flow(summary_path.stat().st_mtime if summary_path.exists() else 0.0)
+        if not tdata or not tdata["summary"]["dates"]:
+            st.info("還沒有投信產業資料，請按上方「補近 20 個交易日」下載。")
+        else:
+            avail = [p for p in TRUST_PERIODS if p <= len(tdata["summary"]["dates"])]
+            n = st.radio("統計期間", avail, index=min(1, len(avail) - 1), horizontal=True, key="trust_n",
+                         format_func=lambda p: "最新 1 日" if p == 1 else f"近 {p} 日")
+            # 產業別以官方產業清單為準，查不到才用 FinMind 的分類
+            tf = calc_trust_flow(tdata, n, sid, tdata["imap"].get(sid) or industry)
+            if not tf:
+                st.info("投信產業資料不足")
+            else:
+                rows = tf["rows"]
+                top, bottom = rows[0], rows[-1]
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("投信總買進", _yi(tf["tot_buy"]), help=tf["period"])
+                m2.metric("投信總賣出", _yi(tf["tot_sell"]), help="不含 ETF／ETN")
+                m3.metric("最大流入產業", top["產業"] if top["淨額"] > 0 else "—",
+                          delta=_signed_yi(top["淨額"]) if top["淨額"] > 0 else None, delta_color="off")
+                m4.metric("最大流出產業", bottom["產業"] if bottom["淨額"] < 0 else "—",
+                          delta=_signed_yi(bottom["淨額"]) if bottom["淨額"] < 0 else None, delta_color="off")
+                if tf["ind_lines"]:
+                    st.markdown(f'<div style="border:2px solid {tf["color"]};color:{tf["color"]};border-radius:10px;'
+                                f'padding:10px 14px;font-weight:600;margin:8px 0">🏭 {tf["level"]}</div>',
+                                unsafe_allow_html=True)
+                    st.markdown(f'<div class="chip-box">{"<br>".join(tf["ind_lines"])}</div>', unsafe_allow_html=True)
+                st.markdown("  \n".join(tf["lines"]))
+
+                hl = tf["ind"]["產業"] if tf["ind"] else ""
+                labels = [("👉 " if r["產業"] == hl else "") + r["產業"] for r in rows]
+                fig = go.Figure()
+                fig.add_bar(y=labels, x=[-r["賣出"] for r in rows], orientation="h", name="賣出（億）",
+                            marker_color="#2ecc71", customdata=[r["賣出"] for r in rows],
+                            hovertemplate="%{y}<br>賣出 %{customdata:.1f} 億<extra></extra>")
+                fig.add_bar(y=labels, x=[r["買進"] for r in rows], orientation="h", name="買進（億）",
+                            marker_color="#e74c3c", hovertemplate="%{y}<br>買進 %{x:.1f} 億<extra></extra>")
+                fig.add_scatter(y=labels, x=[r["淨額"] for r in rows], mode="markers", name="淨額",
+                                marker=dict(symbol="diamond", size=9, color="#f1c40f"),
+                                hovertemplate="%{y}<br>淨額 %{x:+.1f} 億<extra></extra>")
+                fig.update_layout(barmode="relative", height=max(360, 24 * len(rows) + 90),
+                                  title=f"投信各產業買進 vs 賣出（{tf['period']}，億元，依淨額排序）",
+                                  yaxis=dict(autorange="reversed"), xaxis_title="← 賣出　｜　買進 →（億元）",
+                                  legend=dict(orientation="h", y=1.02, x=0), margin=dict(l=10, r=10, t=80, b=40))
+                st.plotly_chart(fig, width="stretch")
+
+                tbl = pd.DataFrame([{k: r[k] for k in ("排名", "產業", "買進", "賣出", "淨額", "佔總買進%", "佔總賣出%")}
+                                    for r in rows])
+                if tf["etf"]:
+                    e = tf["etf"]
+                    tbl.loc[len(tbl)] = [None, f"{e['產業']}（不排名）", e["買進"], e["賣出"], e["淨額"], None, None]
+                st.dataframe(tbl.style.format({"排名": "{:.0f}", "買進": "{:.1f}", "賣出": "{:.1f}", "淨額": "{:+.1f}",
+                                               "佔總買進%": "{:.1f}%", "佔總賣出%": "{:.1f}%"}, na_rep="—"),
+                             hide_index=True, width="stretch")
+
+                def stock_list(lst, sign):
+                    return "、".join(
+                        (f"**👉 {o['name']}（{o['id']}）" if o["id"] == sid else f"{o['name']}（{o['id']}）")
+                        + f"{'+' if sign > 0 else '−'}{abs(o['net']):.2f} 億" + ("**" if o["id"] == sid else "")
+                        for o in lst) or "無"
+                with st.expander("📋 各產業投信買最多／賣最多的個股", expanded=False):
+                    for r in rows:
+                        if r["stocks"]:
+                            buys = [o for o in r["stocks"] if o["net"] > 0][:3]
+                            sells = [o for o in reversed(r["stocks"]) if o["net"] < 0][:3]
+                            st.markdown(f"**{r['產業']}**　🔴 買超：{stock_list(buys, 1)}　🟢 賣超：{stock_list(sells, -1)}")
+                rng_txt = tf["dates"][0][5:] + (f" ～ {tf['dates'][-1][5:]}" if len(tf["dates"]) > 1 else "")
+                st.caption(f"資料日 {rng_txt}，更新於 {tf['updated']}"
+                           + ("" if tf["complete"] else "；部分日期的個股明細缺漏，個股排名可能不完整"))
+                rpt["trust_flow"] = f"{tf['level']}：{''.join(tf['ind_lines'])}　{''.join(tf['lines'])}"
 
     # ════════════════════════════════════════════════════════════
     #  STEP 6c 波浪理論輔助判讀（ZigZag，輔助非定論）
