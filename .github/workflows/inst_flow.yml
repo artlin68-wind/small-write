@@ -1,4 +1,4 @@
-name: 更新投信買賣資金產業分布
+name: 更新三大法人買賣資金產業分布
 
 on:
   schedule:
@@ -15,7 +15,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: trust_flow
+  group: inst_flow
   cancel-in-progress: false
 
 jobs:
@@ -29,25 +29,25 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: 抓投信買賣資料
+      - name: 抓三大法人買賣資料
         env:
           BACKFILL: ${{ github.event.inputs.backfill }}
         run: |
           if [ -n "$BACKFILL" ]; then
-            python scripts/fetch_trust_flow.py backfill "$BACKFILL"
+            python scripts/fetch_inst_flow.py backfill "$BACKFILL"
           else
-            python scripts/fetch_trust_flow.py daily
+            python scripts/fetch_inst_flow.py daily
           fi
 
       - name: Commit 資料
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
-          git add data/trust_flow
+          git add data/inst_flow
           if git diff --cached --quiet; then
             echo "資料沒有變化"
           else
-            git commit -m "Update investment trust flow data"
+            git commit -m "Update institutional flow data"
             git pull --rebase
             git push
           fi

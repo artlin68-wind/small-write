@@ -361,12 +361,13 @@
     </div>
 
     <div class="card">
-      <h2>🏭 投信買盤／賣盤資金產業分布（大盤）</h2>
-      <p class="caption">把全市場（上市＋上櫃）每檔股票的投信買進、賣出依官方產業別加總，看投信的錢流進哪些產業、從哪些產業撤出。官方只公布買賣「股數」，金額＝股數×當日收盤價，屬估算值；ETF／ETN 不屬於任何產業，另外列示、不列入排名。資料來源：證交所、櫃買中心公開資料（每個交易日晚上 7 點後更新）。紅色＝買進、綠色＝賣出。</p>
-      <div class="input-row no-report" id="trustPeriodBtns" style="gap:6px;margin-bottom:6px"></div>
-      <div id="trustFlowNote"><div class="info-box">尚未載入</div></div>
-      <div class="chart-wrap"><div id="trustFlowChartDiv"></div></div>
-      <div id="trustFlowTable"></div>
+      <h2>🏭 三大法人買盤／賣盤資金產業分布（大盤）</h2>
+      <p class="caption">把全市場（上市＋上櫃）每檔股票的外資、投信、自營商買進與賣出，依官方產業別加總，看法人的錢流進哪些產業、從哪些產業撤出。上排選法人（三大法人合計／外資／投信／自營商），下排選期間。官方只公布買賣「股數」，金額＝股數×當日收盤價，屬估算值；外資含外資自營商，自營商含自行買賣與避險；ETF／ETN 不屬於任何產業，另外列示、不列入排名。資料來源：證交所、櫃買中心公開資料（每個交易日晚上 7 點後更新）。紅色＝買進、綠色＝賣出。</p>
+      <div class="input-row no-report" id="instWhoBtns" style="gap:6px;margin-bottom:6px"></div>
+      <div class="input-row no-report" id="instPeriodBtns" style="gap:6px;margin-bottom:6px"></div>
+      <div id="instFlowNote"><div class="info-box">尚未載入</div></div>
+      <div class="chart-wrap"><div id="instFlowChartDiv"></div></div>
+      <div id="instFlowTable"></div>
     </div>
 
     <div class="card">
@@ -591,26 +592,26 @@ async function fetchMarketMargin(days = 200) {
   return rows;
 }
 
-// 投信買賣資金產業分布：scripts/fetch_trust_flow.py 每天抓好放在 data/trust_flow（證交所不開放瀏覽器跨網域）
-const fetchTrustSummary = () => cachedDaily("trustSummary", async () => {
+// 三大法人買賣資金產業分布：scripts/fetch_inst_flow.py 每天抓好放在 data/inst_flow（證交所不開放瀏覽器跨網域）
+const fetchInstFlowSummary = () => cachedDaily("instFlowSummary", async () => {
   const get = async path => {
     const res = await fetch(path, { cache: "no-cache" });
     if (!res.ok) throw new Error(`${path} HTTP ${res.status}`);
     return res.json();
   };
   const [summary, imap] = await Promise.all([
-    get("data/trust_flow/summary.json"),
-    get("data/trust_flow/industry_map.json").catch(() => ({})),
+    get("data/inst_flow/summary.json"),
+    get("data/inst_flow/industry_map.json").catch(() => ({})),
   ]);
   return { summary, imap };
 });
-const trustDayCache = new Map();
-function fetchTrustDay(date) {
-  if (!trustDayCache.has(date)) {
-    trustDayCache.set(date, fetch(`data/trust_flow/days/${date}.json`, { cache: "no-cache" })
+const instFlowDayCache = new Map();
+function fetchInstFlowDay(date) {
+  if (!instFlowDayCache.has(date)) {
+    instFlowDayCache.set(date, fetch(`data/inst_flow/days/${date}.json`, { cache: "no-cache" })
       .then(r => (r.ok ? r.json() : null)).catch(() => null));
   }
-  return trustDayCache.get(date);
+  return instFlowDayCache.get(date);
 }
 
 // 台指期：三大法人多空未平倉（口）、全市場未平倉與近月收盤、外資現貨買賣超（億元）
@@ -3052,9 +3053,9 @@ async function runAnalysis() {
     const futOi = calcOpenInterest(futData, futPos);
     renderFutures(futPos, futOi, taiexRows);
 
-    // 投信買賣資金產業分布（大盤資料，讀同網域 data/trust_flow，不擋其他分析）
-    trustView.ctx = { stockId, official, industry };
-    renderTrustFlow();
+    // 三大法人買賣資金產業分布（大盤資料，讀同網域 data/inst_flow，不擋其他分析）
+    instView.ctx = { stockId, official, industry };
+    renderInstFlow();
 
     // 匯率關聯
     renderFxEval(fx, sname);
@@ -3081,7 +3082,7 @@ async function runAnalysis() {
       renderFxEval(fx, sname);
       renderMarginLevel(marginLv, mktMargin, priceRows, sname, stockMaint, mktMaint);
       renderFutures(futPos, futOi, taiexRows);
-      renderTrustFlow();
+      renderInstFlow();
       updateWave(priceRows, sname);
       updateFib(priceRows, sname);
     };
@@ -3222,38 +3223,57 @@ function renderFutures(fp, oi, taiexRows) {
     `<div class="item-row"><b>近 ${MARGIN_CHG_N} 個交易日價格 vs 未平倉：</b></div><div class="item-row">${oi.rel.icon} ${oi.rel.text}</div>`;
 }
 
-// ── 投信買盤／賣盤資金產業分布 ─────────────────────────────
-const TRUST_PERIODS = [1, 5, 20];
-const TRUST_TOP_N = 3;          // 產業前幾名算「集中流入／流出」
-const trustView = { n: 5, ctx: null };
+// ── 三大法人買盤／賣盤資金產業分布 ─────────────────────────────
+const INST_PERIODS = [1, 5, 20];
+const INST_TOP_N = 3;           // 產業前幾名算「集中流入／流出」
+// i：在 [外資買, 外資賣, 投信買, 投信賣, 自營買, 自營賣] 中的位置（買＝2i、賣＝2i+1）；合計＝三者相加
+const INST_KINDS = [
+  { key: "all", label: "三大法人合計", i: null },
+  { key: "foreign", label: "外資", i: 0 },
+  { key: "trust", label: "投信", i: 1 },
+  { key: "dealer", label: "自營商", i: 2 },
+];
+const instView = { n: 5, who: "all", ctx: null };
 
 function yi(v) { return `${v.toFixed(Math.abs(v) >= 100 ? 0 : 1)} 億`; }
 function signedYi(v) { return `${v >= 0 ? "+" : "−"}${yi(Math.abs(v))}`; }
+// v：6 個數字；回傳 [買, 賣]
+function instPick(v, i) {
+  return i === null ? [v[0] + v[2] + v[4], v[1] + v[3] + v[5]] : [v[2 * i], v[2 * i + 1]];
+}
 
-// summary：data/trust_flow/summary.json；days：所選期間的每日個股檔（萬元）
-function calcTrustFlow(summary, n, days, stockId, stockInd) {
+// summary：data/inst_flow/summary.json；days：所選期間的每日個股檔（萬元）
+function calcInstFlow(summary, n, days, who, stockId, stockInd) {
   const all = summary.dates;
   if (!all.length) return null;
+  const kind = INST_KINDS.find(k => k.key === who) || INST_KINDS[0];
   n = Math.min(n, all.length);
   const from = all.length - n;
-  const sumRange = (arr, a, b) => arr.slice(a, b).reduce((s, [bu, se]) => [s[0] + bu, s[1] + se], [0, 0]);
+  const add6 = (arr, a, b) => arr.slice(a, b).reduce((s, d) => s.map((x, j) => x + d[j]), [0, 0, 0, 0, 0, 0]);
   let etf = null;
   const rows = [];
   for (const [name, arr] of Object.entries(summary.industries)) {
-    const [buy, sell] = sumRange(arr, from, all.length);
+    const v = add6(arr, from, all.length);
+    const [buy, sell] = instPick(v, kind.i);
     // 前一段同長度期間的淨額，用來看加碼／減碼
-    const prev = from - n >= 0 ? sumRange(arr, from - n, from) : null;
-    const r = { name, buy, sell, net: buy - sell, prevNet: prev ? prev[0] - prev[1] : null, stocks: [] };
+    const pv = from - n >= 0 ? instPick(add6(arr, from - n, from), kind.i) : null;
+    const nets = [0, 1, 2].map(i => v[2 * i] - v[2 * i + 1]);   // 外資／投信／自營商各自淨額
+    const r = { name, buy, sell, net: buy - sell, prevNet: pv ? pv[0] - pv[1] : null, nets, stocks: [] };
     if (name === summary.etf) etf = r;
     else if (buy + sell > 0.01) rows.push(r);
   }
+  if (!rows.length) return null;
   rows.sort((a, b) => b.net - a.net);
   const totBuy = rows.reduce((s, r) => s + r.buy, 0), totSell = rows.reduce((s, r) => s + r.sell, 0);
+  const totNets = [0, 1, 2].map(i => rows.reduce((s, r) => s + r.nets[i], 0));
   rows.forEach((r, i) => { r.rank = i + 1; r.buyShare = totBuy ? r.buy / totBuy * 100 : 0; r.sellShare = totSell ? r.sell / totSell * 100 : 0; });
 
   // 個股：期間內加總（萬元 → 億元）
   const byStock = new Map();
-  days.filter(Boolean).forEach(d => d.stocks.forEach(([id, name, ind, b, s]) => {
+  days.filter(Boolean).forEach(d => d.stocks.forEach(row => {
+    const [id, name, ind] = row;
+    const [b, s] = instPick(row.slice(3), kind.i);
+    if (b <= 0 && s <= 0) return;
     const o = byStock.get(id) || { id, name, ind, buy: 0, sell: 0 };
     o.buy += b / 1e4; o.sell += s / 1e4;
     byStock.set(id, o);
@@ -3262,41 +3282,51 @@ function calcTrustFlow(summary, n, days, stockId, stockInd) {
   byStock.forEach(o => { o.net = o.buy - o.sell; const r = byInd.get(o.ind); if (r) r.stocks.push(o); });
   rows.forEach(r => r.stocks.sort((a, b) => b.net - a.net));
 
+  const who_ = kind.label;
   const me = byStock.get(stockId) || null;
   const ind = byInd.get(stockInd || (me && me.ind)) || null;
   const inflow = rows.filter(r => r.net > 0), outflow = rows.filter(r => r.net < 0).reverse();
   const posSum = inflow.reduce((s, r) => s + r.net, 0);
-  const topShare = posSum ? inflow.slice(0, TRUST_TOP_N).reduce((s, r) => s + r.net, 0) / posSum * 100 : 0;
+  const topShare = posSum ? inflow.slice(0, INST_TOP_N).reduce((s, r) => s + r.net, 0) / posSum * 100 : 0;
   const period = n === 1 ? `${all[all.length - 1].slice(5)} 單日` : `近 ${n} 個交易日`;
-  const names = list => list.slice(0, TRUST_TOP_N).map(r => `${r.name}（${signedYi(r.net)}）`).join("、") || "無";
+  const names = list => list.slice(0, INST_TOP_N).map(r => `${r.name}（${signedYi(r.net)}）`).join("、") || "無";
+  const netsTxt = nets => `外資 ${signedYi(nets[0])}、投信 ${signedYi(nets[1])}、自營商 ${signedYi(nets[2])}`;
 
-  let text = `${period}投信在各產業共買進 ${yi(totBuy)}、賣出 ${yi(totSell)}，淨${totBuy >= totSell ? "買" : "賣"} ${yi(Math.abs(totBuy - totSell))}。` +
+  let text = `${period}${who_}在各產業共買進 ${yi(totBuy)}、賣出 ${yi(totSell)}，淨${totBuy >= totSell ? "買" : "賣"} ${yi(Math.abs(totBuy - totSell))}` +
+    `（${netsTxt(totNets)}，不含 ETF）。` +
     `<br>💰 資金流入最多：${names(inflow)}` +
     `<br>💸 資金流出最多：${names(outflow)}` +
-    (inflow.length ? `<br>前 ${TRUST_TOP_N} 大流入產業佔全部淨流入的 ${topShare.toFixed(0)}%，${topShare >= 70 ? "投信資金高度集中在少數產業，族群輪動效應明顯" : topShare >= 45 ? "資金有一定集中度" : "資金分散在多個產業"}。` : "");
+    (inflow.length ? `<br>前 ${INST_TOP_N} 大流入產業佔全部淨流入的 ${topShare.toFixed(0)}%，${topShare >= 70 ? `${who_}資金高度集中在少數產業，族群輪動效應明顯` : topShare >= 45 ? "資金有一定集中度" : "資金分散在多個產業"}。` : "");
   if (etf && etf.buy + etf.sell > 0.01) text += `<br>📦 ${esc(summary.etf)}（不列入排名）：買進 ${yi(etf.buy)}、賣出 ${yi(etf.sell)}，ETF 不屬於單一產業，僅供參考。`;
+  if (kind.key === "dealer" || kind.key === "all") text += `<br>ℹ️ 自營商買賣含「避險」部位（券商發行權證後在現股避險），不一定代表看多看空。`;
 
-  let level = "投信產業資金分布", color = "#2e86c1", indTxt = "";
+  let level = `${who_}產業資金分布`, color = "#2e86c1", indTxt = "";
   if (ind) {
     const trend = ind.prevNet === null ? "" :
       ind.net - ind.prevNet >= Math.max(1, Math.abs(ind.prevNet) * 0.3) ? `，比前 ${n} 日（${signedYi(ind.prevNet)}）加碼` :
       ind.prevNet - ind.net >= Math.max(1, Math.abs(ind.prevNet) * 0.3) ? `，比前 ${n} 日（${signedYi(ind.prevNet)}）減碼` : `，與前 ${n} 日（${signedYi(ind.prevNet)}）相近`;
-    indTxt = `本股所屬「${esc(ind.name)}」${period}投信買進 ${yi(ind.buy)}、賣出 ${yi(ind.sell)}，淨額 ${signedYi(ind.net)}，` +
-      `在 ${rows.length} 個產業中排第 ${ind.rank} 名（佔投信總買進 ${ind.buyShare.toFixed(1)}%）${trend}。`;
-    if (ind.net > 0 && ind.rank <= TRUST_TOP_N) { level = `投信資金集中流入「${ind.name}」`; color = "#27ae60"; indTxt += "產業有投信資金撐腰，族群輪動對本股有利。"; }
-    else if (ind.net < 0 && ind.rank > rows.length - TRUST_TOP_N) { level = `投信資金正撤出「${ind.name}」`; color = "#e74c3c"; indTxt += "投信在這個產業是主要賣方，族群面短線有壓力。"; }
-    else if (ind.net > 0) { level = `投信小幅買進「${ind.name}」`; color = "#2e86c1"; }
-    else { level = `投信小幅賣出「${ind.name}」`; color = "#e67e22"; }
+    indTxt = `本股所屬「${esc(ind.name)}」${period}${who_}買進 ${yi(ind.buy)}、賣出 ${yi(ind.sell)}，淨額 ${signedYi(ind.net)}，` +
+      `在 ${rows.length} 個產業中排第 ${ind.rank} 名（佔${who_}總買進 ${ind.buyShare.toFixed(1)}%）${trend}。`;
+    if (ind.net > 0 && ind.rank <= INST_TOP_N) { level = `${who_}資金集中流入「${ind.name}」`; color = "#27ae60"; indTxt += "產業有法人資金撐腰，族群輪動對本股有利。"; }
+    else if (ind.net < 0 && ind.rank > rows.length - INST_TOP_N) { level = `${who_}資金正撤出「${ind.name}」`; color = "#e74c3c"; indTxt += `${who_}在這個產業是主要賣方，族群面短線有壓力。`; }
+    else if (ind.net > 0) { level = `${who_}小幅買進「${ind.name}」`; color = "#2e86c1"; }
+    else { level = `${who_}小幅賣出「${ind.name}」`; color = "#e67e22"; }
+    // 看是誰在買／誰在賣，法人方向是否一致
+    const [f, t, d] = ind.nets;
+    const agree = f > 0 && t > 0 ? "外資、投信同步買進這個產業，法人看法一致，訊號較強。"
+      : f < 0 && t < 0 ? "外資、投信同步賣出這個產業，法人看法一致偏空。"
+      : f * t < 0 ? `外資與投信方向相反（${f > 0 ? "外資買、投信賣" : "投信買、外資賣"}），法人看法分歧，以金額較大的一方為主。` : "";
+    indTxt += `<br>👥 產業內各法人淨額：${netsTxt(ind.nets)}。${agree}`;
   }
-  if (me) indTxt += `${indTxt ? "<br>" : ""}本股投信${period}買進 ${yi(me.buy)}、賣出 ${yi(me.sell)}，淨額 ${signedYi(me.net)}` +
-    (ind && ind.stocks.length > 1 ? `，在產業內 ${ind.stocks.length} 檔投信有交易的股票中排第 ${ind.stocks.indexOf(me) + 1} 名。` : "。");
-  else if (ind) indTxt += `<br>本股${period}沒有投信買賣紀錄。`;
+  if (me) indTxt += `${indTxt ? "<br>" : ""}本股${who_}${period}買進 ${yi(me.buy)}、賣出 ${yi(me.sell)}，淨額 ${signedYi(me.net)}` +
+    (ind && ind.stocks.length > 1 && ind.stocks.includes(me) ? `，在產業內 ${ind.stocks.length} 檔${who_}有交易的股票中排第 ${ind.stocks.indexOf(me) + 1} 名。` : "。");
+  else if (ind) indTxt += `<br>本股${period}沒有${who_}買賣紀錄。`;
 
-  return { n, period, dates: all.slice(from), rows, etf, totBuy, totSell, ind, me, level, color, text, indTxt,
-           complete: days.filter(Boolean).length === n, updated: summary.updated };
+  return { n, who: kind.key, whoLabel: who_, period, dates: all.slice(from), rows, etf, totBuy, totSell, totNets, ind, me,
+           level, color, text, indTxt, complete: days.filter(Boolean).length === n, updated: summary.updated };
 }
 
-function renderTrustFlowChartSVG(elId, tf) {
+function renderInstFlowChartSVG(elId, tf) {
   const el = document.getElementById(elId);
   // 金額很小的產業（買賣合計 < 總額 0.3%）不畫，圖才不會拉很長；完整數字在下方明細表
   const total = tf.rows.reduce((s, r) => s + r.buy + r.sell, 0);
@@ -3304,15 +3334,17 @@ function renderTrustFlowChartSVG(elId, tf) {
   const hidden = tf.rows.length - rows.length;
   if (!rows.length) { el.innerHTML = ""; return; }
   const W = chartW(), small = W < 600;
-  const fs = small ? 10.5 : 12, rowH = small ? 18 : 20, padT = 34, labelW = small ? 70 : 100, padR = small ? 40 : 60;
+  const fs = small ? 10.5 : 12, rowH = small ? 18 : 20, padT = 34, labelW = small ? 70 : 100, padR = small ? 44 : 60;
   const H = padT + rows.length * rowH + (hidden ? 26 : 10);
   const short = n => n.replace("電腦及週邊設備業", "電腦週邊").replace(/(工業|業)$/, "");
   const plotW = W - labelW - padR, mid = labelW + plotW / 2;
   const max = Math.max(...rows.map(r => Math.max(r.buy, r.sell)), 0.1);
   const sx = v => v / max * (plotW / 2 - 2);
   const hl = tf.ind ? tf.ind.name : "";
+  const title = small ? `${tf.whoLabel}各產業買賣（${tf.period.replace("近 ", "近").replace(" 個交易日", "日")}，億元）`
+    : `${tf.whoLabel}各產業買進 vs 賣出（${tf.period}，億元，依淨額排序）`;
   let s = `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" font-family="inherit">` +
-    `<text x="${W / 2}" y="16" fill="#dfe5ee" font-size="${titleFs(W)}" text-anchor="middle" font-weight="600">${small ? `投信各產業買賣（${tf.period.replace("近 ", "近").replace(" 個交易日", "日")}，億元）` : `投信各產業買進 vs 賣出（${tf.period}，億元，依淨額排序）`}</text>` +
+    `<text x="${W / 2}" y="16" fill="#dfe5ee" font-size="${titleFs(W)}" text-anchor="middle" font-weight="600">${title}</text>` +
     `<text x="${mid - 6}" y="${padT - 4}" fill="#3ecf74" font-size="${fs}" text-anchor="end">← 賣出</text>` +
     `<text x="${mid + 6}" y="${padT - 4}" fill="#ff5c5c" font-size="${fs}">買進 →</text>` +
     `<text x="${W - 2}" y="${padT - 4}" fill="#a3adbd" font-size="${fs}" text-anchor="end">淨額</text>`;
@@ -3322,7 +3354,7 @@ function renderTrustFlowChartSVG(elId, tf) {
     s += `<text x="${labelW - 6}" y="${y + rowH / 2 + fs / 2 - 1}" fill="${r.name === hl ? "#8fb4ff" : "#c5cdd9"}" font-size="${fs}" text-anchor="end"${r.name === hl ? ' font-weight="700"' : ""}>${esc(short(r.name))}</text>` +
       `<rect x="${mid - sx(r.sell)}" y="${y + 3}" width="${sx(r.sell)}" height="${bh}" fill="#3ecf74" opacity="0.85"/>` +
       `<rect x="${mid}" y="${y + 3}" width="${sx(r.buy)}" height="${bh}" fill="#ff5c5c" opacity="0.85"/>` +
-      `<text x="${W - 2}" y="${y + rowH / 2 + fs / 2 - 1}" fill="${r.net >= 0 ? "#ff7a7a" : "#5fe08f"}" font-size="${fs}" text-anchor="end">${r.net >= 0 ? "+" : "−"}${Math.abs(r.net).toFixed(1)}</text>`;
+      `<text x="${W - 2}" y="${y + rowH / 2 + fs / 2 - 1}" fill="${r.net >= 0 ? "#ff7a7a" : "#5fe08f"}" font-size="${fs}" text-anchor="end">${r.net >= 0 ? "+" : "−"}${Math.abs(r.net).toFixed(Math.abs(r.net) >= 100 ? 0 : 1)}</text>`;
   });
   const bottomY = padT + rows.length * rowH;
   s += `<line x1="${mid}" y1="${padT}" x2="${mid}" y2="${bottomY}" stroke="#8d98aa" stroke-width="1"/>`;
@@ -3331,60 +3363,69 @@ function renderTrustFlowChartSVG(elId, tf) {
   el.innerHTML = s;
 }
 
-async function renderTrustFlow() {
-  const ctx = trustView.ctx;
+function instBtns(el, items, current, onPick) {
+  el.innerHTML = items.map(([v, label]) =>
+    `<button type="button" data-v="${v}" style="padding:6px 14px;font-size:13px;${v === current ? "" : "background:#263040;color:#c5cdd9"}">${label}</button>`).join("");
+  el.querySelectorAll("button").forEach(b => b.onclick = () => onPick(b.dataset.v));
+}
+
+async function renderInstFlow() {
+  const ctx = instView.ctx;
   if (!ctx) return;
-  const note = document.getElementById("trustFlowNote"), chart = document.getElementById("trustFlowChartDiv"),
-        table = document.getElementById("trustFlowTable"), btns = document.getElementById("trustPeriodBtns");
+  const note = document.getElementById("instFlowNote"), chart = document.getElementById("instFlowChartDiv"),
+        table = document.getElementById("instFlowTable"), whoEl = document.getElementById("instWhoBtns"),
+        btns = document.getElementById("instPeriodBtns");
   let data;
-  try { data = await fetchTrustSummary(); }
+  try { data = await fetchInstFlowSummary(); }
   catch (e) {
-    console.error("抓取投信產業資料失敗：", e);
-    btns.innerHTML = ""; chart.innerHTML = ""; table.innerHTML = "";
-    note.innerHTML = `<div class="info-box">投信產業分布資料尚未產生。請先在專案資料夾執行 <code>python scripts/fetch_trust_flow.py backfill 20</code>（或等 GitHub Actions 每日排程更新）。</div>`;
+    console.error("抓取法人產業資料失敗：", e);
+    whoEl.innerHTML = ""; btns.innerHTML = ""; chart.innerHTML = ""; table.innerHTML = "";
+    note.innerHTML = `<div class="info-box">法人產業分布資料尚未產生。請先在專案資料夾執行 <code>python scripts/fetch_inst_flow.py backfill 20</code>（或等 GitHub Actions 每日排程更新）。</div>`;
     return;
   }
-  if (trustView.ctx !== ctx) return;        // 等資料時已經換了別檔股票
+  if (instView.ctx !== ctx) return;        // 等資料時已經換了別檔股票
   const { summary, imap } = data;
-  const avail = TRUST_PERIODS.filter(p => p <= summary.dates.length);
-  if (!avail.length) { note.innerHTML = `<div class="info-box">投信產業分布資料是空的，請重新執行抓取程式</div>`; return; }
-  if (!avail.includes(trustView.n)) trustView.n = avail[avail.length - 1];
-  btns.innerHTML = avail.map(p => `<button type="button" data-n="${p}" style="padding:6px 14px;font-size:13px;${p === trustView.n ? "" : "background:#263040;color:#c5cdd9"}">${p === 1 ? "最新 1 日" : `近 ${p} 日`}</button>`).join("");
-  btns.querySelectorAll("button").forEach(b => b.onclick = () => { trustView.n = Number(b.dataset.n); renderTrustFlow(); });
+  const avail = INST_PERIODS.filter(p => p <= summary.dates.length);
+  if (!avail.length) { note.innerHTML = `<div class="info-box">法人產業分布資料是空的，請重新執行抓取程式</div>`; return; }
+  if (!avail.includes(instView.n)) instView.n = avail[avail.length - 1];
+  instBtns(whoEl, INST_KINDS.map(k => [k.key, k.label]), instView.who, v => { instView.who = v; renderInstFlow(); });
+  instBtns(btns, avail.map(p => [String(p), p === 1 ? "最新 1 日" : `近 ${p} 日`]), String(instView.n),
+    v => { instView.n = Number(v); renderInstFlow(); });
 
-  const n = trustView.n;
-  const days = await Promise.all(summary.dates.slice(-n).map(fetchTrustDay));
-  if (trustView.ctx !== ctx || trustView.n !== n) return;
+  const { n, who } = instView;
+  const days = await Promise.all(summary.dates.slice(-n).map(fetchInstFlowDay));
+  if (instView.ctx !== ctx || instView.n !== n || instView.who !== who) return;
   // 產業別以官方資料為準：公司基本資料 → 官方產業清單 → FinMind
   const stockInd = (ctx.official && ctx.official.industry) || imap[ctx.stockId] || ctx.industry;
-  const tf = calcTrustFlow(summary, n, days, ctx.stockId, stockInd);
-  if (!tf) { note.innerHTML = `<div class="info-box">投信產業分布資料不足</div>`; return; }
+  const tf = calcInstFlow(summary, n, days, who, ctx.stockId, stockInd);
+  if (!tf) { note.innerHTML = `<div class="info-box">法人產業分布資料不足</div>`; chart.innerHTML = ""; table.innerHTML = ""; return; }
 
   const top = tf.rows[0], bottom = tf.rows[tf.rows.length - 1];
   note.innerHTML =
     `<div class="metric-grid">` +
-    metricHtml("投信總買進", yi(tf.totBuy), tf.period) +
-    metricHtml("投信總賣出", yi(tf.totSell), "不含 ETF／ETN") +
-    metricHtml("最大流入產業", top && top.net > 0 ? esc(top.name) : "—", top && top.net > 0 ? signedYi(top.net) : "", "#ff7a7a") +
-    metricHtml("最大流出產業", bottom && bottom.net < 0 ? esc(bottom.name) : "—", bottom && bottom.net < 0 ? signedYi(bottom.net) : "", "#5fe08f") +
+    metricHtml(`${tf.whoLabel}總買進`, yi(tf.totBuy), tf.period) +
+    metricHtml(`${tf.whoLabel}總賣出`, yi(tf.totSell), "不含 ETF／ETN") +
+    metricHtml("最大流入產業", top.net > 0 ? esc(top.name) : "—", top.net > 0 ? signedYi(top.net) : "", "#ff7a7a") +
+    metricHtml("最大流出產業", bottom.net < 0 ? esc(bottom.name) : "—", bottom.net < 0 ? signedYi(bottom.net) : "", "#5fe08f") +
     `</div>` +
     (tf.ind || tf.me ? `<div class="verdict" style="background:${tf.color}18;border-color:${tf.color};color:${tf.color}">🏭 ${esc(tf.level)}</div>` +
       `<div class="chip-box">${tf.indTxt}</div>` : "") +
     `<div class="item-row">${tf.text}</div>` +
     `<p class="caption">資料日 ${tf.dates[0].slice(5)}${tf.dates.length > 1 ? ` ～ ${tf.dates[tf.dates.length - 1].slice(5)}` : ""}，更新於 ${esc(tf.updated)}` +
     (tf.complete ? "" : "；部分日期的個股明細沒抓到，個股排名可能不完整") + `</p>`;
-  renderTrustFlowChartSVG("trustFlowChartDiv", tf);
+  renderInstFlowChartSVG("instFlowChartDiv", tf);
 
   const stockList = (list, sign) => list.map(o =>
     `${o.id === ctx.stockId ? "<b>👉 " : ""}${esc(o.name)}（${esc(o.id)}）${sign > 0 ? "+" : "−"}${Math.abs(o.net).toFixed(2)} 億${o.id === ctx.stockId ? "</b>" : ""}`).join("、") || "無";
-  table.innerHTML = `<details class="fold"${tf.ind ? "" : " open"}><summary>📋 各產業明細＋投信買最多／賣最多的個股</summary><div class="table-wrap"><table class="data-table">` +
-    `<tr><th>產業</th><th>買進（億）</th><th>賣出（億）</th><th>淨額（億）</th><th>佔總買進</th><th>佔總賣出</th></tr>` +
+  const netCell = v => `<td class="${v >= 0 ? "pos" : "neg"}">${signed(v, 1)}</td>`;
+  table.innerHTML = `<details class="fold"${tf.ind ? "" : " open"}><summary>📋 各產業明細（含各法人淨額）＋${esc(tf.whoLabel)}買最多／賣最多的個股</summary><div class="table-wrap"><table class="data-table">` +
+    `<tr><th>產業</th><th>買進</th><th>賣出</th><th>淨額</th><th>佔總買進</th><th>外資淨額</th><th>投信淨額</th><th>自營淨額</th></tr>` +
     tf.rows.map(r => `<tr${tf.ind && r.name === tf.ind.name ? ' class="hl"' : ""}><td>${r.rank}. ${esc(r.name)}</td>` +
-      `<td>${r.buy.toFixed(1)}</td><td>${r.sell.toFixed(1)}</td><td class="${r.net >= 0 ? "pos" : "neg"}">${signed(r.net, 1)}</td>` +
-      `<td>${r.buyShare.toFixed(1)}%</td><td>${r.sellShare.toFixed(1)}%</td></tr>`).join("") +
+      `<td>${r.buy.toFixed(1)}</td><td>${r.sell.toFixed(1)}</td>${netCell(r.net)}<td>${r.buyShare.toFixed(1)}%</td>` +
+      r.nets.map(netCell).join("") + `</tr>`).join("") +
     (tf.etf ? `<tr><td>${esc(tf.etf.name)}（不排名）</td><td>${tf.etf.buy.toFixed(1)}</td><td>${tf.etf.sell.toFixed(1)}</td>` +
-      `<td class="${tf.etf.net >= 0 ? "pos" : "neg"}">${signed(tf.etf.net, 1)}</td><td>—</td><td>—</td></tr>` : "") +
-    `</table></div>` +
+      `${netCell(tf.etf.net)}<td>—</td>` + tf.etf.nets.map(netCell).join("") + `</tr>` : "") +
+    `</table></div><p class="caption">單位：億元（估算）。買進／賣出／淨額為上方選擇的法人（${esc(tf.whoLabel)}），右邊三欄固定列出各法人淨額方便比較。</p>` +
     tf.rows.filter(r => r.stocks.length).map(r => {
       const buys = r.stocks.filter(o => o.net > 0).slice(0, 3), sells = r.stocks.filter(o => o.net < 0).reverse().slice(0, 3);
       return `<div class="item-row"><b>${esc(r.name)}</b>　🔴 買超：${stockList(buys, 1)}　🟢 賣超：${stockList(sells, -1)}</div>`;
