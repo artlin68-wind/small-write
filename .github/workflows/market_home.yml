@@ -1,0 +1,45 @@
+name: 更新首頁大盤資料（融資餘額、加權指數、美股指數、VIX）
+
+on:
+  schedule:
+    # 週一到週六 13:30 UTC（台灣時間 21:30）：融資資料約晚上 9 點後公布；
+    # 週六那次補上週五美股收盤（台灣週六清晨才收盤）
+    - cron: "30 13 * * 1-6"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: market_home
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 抓首頁大盤資料
+        env:
+          # 選用：在 repo Settings → Secrets 加 FINMIND_TOKEN 可提高查詢上限，沒設也能跑
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+        run: python scripts/fetch_market_home.py
+
+      - name: Commit 資料
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add data/margin/market_total_margin.json data/margin/taiex_price.json data/us_index
+          if git diff --cached --quiet; then
+            echo "資料沒有變化"
+          else
+            git commit -m "Update market home data"
+            git pull --rebase
+            git push
+          fi
