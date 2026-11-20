@@ -213,6 +213,7 @@
       <div class="input-row no-report" id="instPeriodBtns" style="gap:6px;margin-bottom:6px"></div>
       <div id="instFlowNote"><div class="info-box"><span class="spinner"></span>法人產業資料載入中…</div></div>
       <div class="chart-wrap"><div id="instFlowChartDiv"></div></div>
+      <div class="chart-wrap"><div id="instFlowPieDiv"></div></div>
       <div id="instFlowTable"></div>
     </div>
 
@@ -3400,41 +3401,98 @@ function calcInstFlow(summary, n, days, who, stockId, stockInd) {
            level, color, text, indTxt, complete: days.filter(Boolean).length === n, updated: summary.updated };
 }
 
+// 柱狀圖：各產業淨額（淨流入前 8 名＋淨流出前 8 名），紅色往右＝淨買、綠色往左＝淨賣
+const INST_BAR_N = 8;
 function renderInstFlowChartSVG(elId, tf) {
   const el = document.getElementById(elId);
-  // 金額很小的產業（買賣合計 < 總額 0.3%）不畫，圖才不會拉很長；完整數字在下方明細表
-  const total = tf.rows.reduce((s, r) => s + r.buy + r.sell, 0);
-  const rows = tf.rows.filter(r => r.buy + r.sell >= total * 0.003);
-  const hidden = tf.rows.length - rows.length;
+  const ins = tf.rows.filter(r => r.net > 0).slice(0, INST_BAR_N);
+  const outs = tf.rows.filter(r => r.net < 0).slice(-INST_BAR_N);
+  const rows = [...ins, ...outs];
   if (!rows.length) { el.innerHTML = ""; return; }
   const W = chartW(), small = W < 600;
-  const fs = small ? 10.5 : 12, rowH = small ? 18 : 20, padT = 34, labelW = small ? 70 : 100, padR = small ? 44 : 60;
-  const H = padT + rows.length * rowH + (hidden ? 26 : 10);
+  const fs = small ? 11 : 12.5, rowH = small ? 22 : 24, padT = 40, labelW = small ? 74 : 110, padR = small ? 8 : 16;
+  const gap = ins.length && outs.length ? 10 : 0;
+  const H = padT + rows.length * rowH + gap + 10;
   const short = n => n.replace("電腦及週邊設備業", "電腦週邊").replace(/(工業|業)$/, "");
-  const plotW = W - labelW - padR, mid = labelW + plotW / 2;
-  const max = Math.max(...rows.map(r => Math.max(r.buy, r.sell)), 0.1);
-  const sx = v => v / max * (plotW / 2 - 2);
+  const plotW = W - labelW - padR;
+  const max = Math.max(...rows.map(r => Math.abs(r.net)), 0.1);
+  const hasNeg = outs.length > 0, hasPos = ins.length > 0;
+  // 只有單邊時用整個寬度；兩邊都有時零軸放中間
+  const zero = labelW + (hasNeg && hasPos ? plotW / 2 : hasNeg ? plotW : 0);
+  const half = hasNeg && hasPos ? plotW / 2 : plotW;
+  const sx = v => Math.abs(v) / max * (half - (small ? 46 : 58));
   const hl = tf.ind ? tf.ind.name : "";
-  const title = small ? `${tf.whoLabel}各產業買賣（${tf.period.replace("近 ", "近").replace(" 個交易日", "日")}，億元）`
-    : `${tf.whoLabel}各產業買進 vs 賣出（${tf.period}，億元，依淨額排序）`;
-  let s = `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" font-family="inherit">` +
-    `<text x="${W / 2}" y="16" fill="#dfe5ee" font-size="${titleFs(W)}" text-anchor="middle" font-weight="600">${title}</text>` +
-    `<text x="${mid - 6}" y="${padT - 4}" fill="#3ecf74" font-size="${fs}" text-anchor="end">← 賣出</text>` +
-    `<text x="${mid + 6}" y="${padT - 4}" fill="#ff5c5c" font-size="${fs}">買進 →</text>` +
-    `<text x="${W - 2}" y="${padT - 4}" fill="#a3adbd" font-size="${fs}" text-anchor="end">淨額</text>`;
+  const per = tf.period.replace("近 ", "近").replace(" 個交易日", "日");
+  let s = `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" xmlns="${svgNS}" font-family="inherit">` +
+    `<text x="${W / 2}" y="16" fill="#dfe5ee" font-size="${titleFs(W)}" text-anchor="middle" font-weight="600">${tf.whoLabel}產業資金淨流入／流出（${per}，億元）</text>` +
+    `<text x="${W / 2}" y="32" fill="#8d98aa" font-size="${fs - 1}" text-anchor="middle"><tspan fill="#ff7a7a">■ 淨買進（資金流入）</tspan>　<tspan fill="#5fe08f">■ 淨賣出（資金流出）</tspan></text>`;
   rows.forEach((r, i) => {
-    const y = padT + i * rowH, bh = rowH - 6;
-    if (r.name === hl) s += `<rect x="0" y="${y}" width="${W}" height="${rowH}" fill="#2d6abf" opacity="0.22"/>`;
-    s += `<text x="${labelW - 6}" y="${y + rowH / 2 + fs / 2 - 1}" fill="${r.name === hl ? "#8fb4ff" : "#c5cdd9"}" font-size="${fs}" text-anchor="end"${r.name === hl ? ' font-weight="700"' : ""}>${esc(short(r.name))}</text>` +
-      `<rect x="${mid - sx(r.sell)}" y="${y + 3}" width="${sx(r.sell)}" height="${bh}" fill="#3ecf74" opacity="0.85"/>` +
-      `<rect x="${mid}" y="${y + 3}" width="${sx(r.buy)}" height="${bh}" fill="#ff5c5c" opacity="0.85"/>` +
-      `<text x="${W - 2}" y="${y + rowH / 2 + fs / 2 - 1}" fill="${r.net >= 0 ? "#ff7a7a" : "#5fe08f"}" font-size="${fs}" text-anchor="end">${r.net >= 0 ? "+" : "−"}${Math.abs(r.net).toFixed(Math.abs(r.net) >= 100 ? 0 : 1)}</text>`;
+    const y = padT + i * rowH + (i >= ins.length ? gap : 0), bh = rowH - 7, w = Math.max(1, sx(r.net));
+    const pos = r.net > 0, isHl = r.name === hl;
+    if (isHl) s += `<rect x="0" y="${y}" width="${W}" height="${rowH}" fill="#2d6abf" opacity="0.25"/>`;
+    s += `<text x="${labelW - 6}" y="${y + rowH / 2 + fs / 2 - 1}" fill="${isHl ? "#8fb4ff" : "#c5cdd9"}" font-size="${fs}" text-anchor="end"${isHl ? ' font-weight="700"' : ""}>${esc(short(r.name))}</text>` +
+      `<rect x="${pos ? zero : zero - w}" y="${y + 3.5}" width="${w}" height="${bh}" rx="2" fill="${pos ? "#ff5c5c" : "#3ecf74"}" opacity="0.88"/>` +
+      `<text x="${pos ? zero + w + 4 : zero - w - 4}" y="${y + rowH / 2 + fs / 2 - 1}" fill="${pos ? "#ff7a7a" : "#5fe08f"}" font-size="${fs}" text-anchor="${pos ? "start" : "end"}">${pos ? "+" : "−"}${Math.abs(r.net).toFixed(Math.abs(r.net) >= 100 ? 0 : 1)}</text>`;
   });
-  const bottomY = padT + rows.length * rowH;
-  s += `<line x1="${mid}" y1="${padT}" x2="${mid}" y2="${bottomY}" stroke="#8d98aa" stroke-width="1"/>`;
-  if (hidden) s += `<text x="${W / 2}" y="${bottomY + 18}" fill="#8d98aa" font-size="${fs}" text-anchor="middle">另 ${hidden} 個產業金額很小未畫，見明細表</text>`;
-  s += `</svg>`;
+  s += `<line x1="${zero}" y1="${padT}" x2="${zero}" y2="${H - 8}" stroke="#8d98aa" stroke-width="1"/></svg>`;
   el.innerHTML = s;
+}
+
+// 圓餅圖（甜甜圈）：資金流入產業佔比、資金流出產業佔比，前 5 名＋其他
+// 流入用紅橘色系、流出用綠藍色系，與「紅＝買、綠＝賣」一致
+const PIE_IN = ["#ff5c5c", "#ff8a4c", "#ffb84d", "#ffd84d", "#f58fb0"], PIE_OUT = ["#2fbf71", "#4fd1a5", "#5cc8e6", "#5b9bff", "#9db4d6"], PIE_OTHER = "#6b7588";
+function donutSvg(cx, cy, R, r, parts) {
+  const total = parts.reduce((t, p) => t + p.v, 0);
+  if (!total) return "";
+  let a0 = -Math.PI / 2, out = "";
+  parts.forEach(p => {
+    const frac = p.v / total;
+    if (frac >= 0.9999) { out += `<circle cx="${cx}" cy="${cy}" r="${(R + r) / 2}" fill="none" stroke="${p.color}" stroke-width="${R - r}"/>`; return; }
+    const a1 = a0 + frac * 2 * Math.PI, big = frac > 0.5 ? 1 : 0;
+    const P = (rad, a) => `${(cx + rad * Math.cos(a)).toFixed(2)},${(cy + rad * Math.sin(a)).toFixed(2)}`;
+    out += `<path d="M${P(R, a0)} A${R},${R} 0 ${big} 1 ${P(R, a1)} L${P(r, a1)} A${r},${r} 0 ${big} 0 ${P(r, a0)} Z" fill="${p.color}" stroke="#151b24" stroke-width="1.5"/>`;
+    a0 = a1;
+  });
+  return out;
+}
+function pieParts(list, colors) {
+  const top = colors.length;
+  const parts = list.slice(0, top).map((r, i) => ({ name: r.name, v: Math.abs(r.net), color: colors[i] }));
+  const rest = list.slice(top).reduce((t, r) => t + Math.abs(r.net), 0);
+  if (rest > 0) parts.push({ name: `其餘 ${list.length - top} 個產業`, v: rest, color: PIE_OTHER });
+  return parts;
+}
+function renderInstFlowPieSVG(elId, tf) {
+  const el = document.getElementById(elId);
+  const groups = [
+    { title: "資金流入哪些產業", sum: 0, parts: pieParts(tf.rows.filter(r => r.net > 0), PIE_IN), tone: "#ff7a7a" },
+    { title: "資金流出哪些產業", sum: 0, parts: pieParts(tf.rows.filter(r => r.net < 0).reverse(), PIE_OUT), tone: "#5fe08f" },
+  ].filter(g => g.parts.length);
+  if (!groups.length) { el.innerHTML = ""; return; }
+  groups.forEach(g => { g.sum = g.parts.reduce((t, p) => t + p.v, 0); });
+  const W = chartW(), side = W >= 560 && groups.length === 2;
+  const colW = side ? W / 2 : W, R = side ? 74 : 70, r = R * 0.58, fs = 12;
+  const short = n => n.replace("電腦及週邊設備業", "電腦週邊").replace(/(工業|業)$/, "");
+  const blockH = g => 30 + R * 2 + 16 + g.parts.length * 19;
+  const H = side ? Math.max(...groups.map(blockH)) : groups.reduce((t, g) => t + blockH(g) + 14, 0);
+  let s = `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" xmlns="${svgNS}" font-family="inherit">`;
+  let yOff = 0;
+  groups.forEach((g, gi) => {
+    const x0 = side ? gi * colW : 0, cx = x0 + colW / 2, cy = yOff + 30 + R;
+    s += `<text x="${cx}" y="${yOff + 16}" fill="${g.tone}" font-size="${titleFs(W)}" text-anchor="middle" font-weight="600">${g.title}</text>`;
+    s += donutSvg(cx, cy, R, r, g.parts);
+    s += `<text x="${cx}" y="${cy - 3}" fill="#a3adbd" font-size="11" text-anchor="middle">合計</text>` +
+      `<text x="${cx}" y="${cy + 14}" fill="${g.tone}" font-size="14" font-weight="700" text-anchor="middle">${g.sum.toFixed(g.sum >= 100 ? 0 : 1)} 億</text>`;
+    const lx = cx - Math.min(colW / 2 - 12, 120);
+    g.parts.forEach((p, i) => {
+      const ly = cy + R + 22 + i * 19, isHl = tf.ind && p.name === tf.ind.name;
+      s += `<rect x="${lx}" y="${ly - 10}" width="11" height="11" rx="2" fill="${p.color}"/>` +
+        `<text x="${lx + 17}" y="${ly}" fill="${isHl ? "#8fb4ff" : "#c5cdd9"}" font-size="${fs}"${isHl ? ' font-weight="700"' : ""}>${esc(short(p.name))}</text>` +
+        `<text x="${lx + Math.min(colW - 24, 240)}" y="${ly}" fill="#dfe5ee" font-size="${fs}" text-anchor="end">${(p.v / g.sum * 100).toFixed(0)}%　${p.v.toFixed(p.v >= 100 ? 0 : 1)} 億</text>`;
+    });
+    if (!side) yOff += blockH(g) + 14;
+  });
+  el.innerHTML = s + `</svg>`;
 }
 
 function instBtns(el, items, current, onPick) {
@@ -3487,11 +3545,12 @@ async function renderInstFlow() {
     `<p class="caption">資料日 ${tf.dates[0].slice(5)}${tf.dates.length > 1 ? ` ～ ${tf.dates[tf.dates.length - 1].slice(5)}` : ""}，更新於 ${esc(tf.updated)}` +
     (tf.complete ? "" : "；部分日期的個股明細沒抓到，個股排名可能不完整") + `</p>`;
   renderInstFlowChartSVG("instFlowChartDiv", tf);
+  renderInstFlowPieSVG("instFlowPieDiv", tf);
 
   const stockList = (list, sign) => list.map(o =>
     `${o.id === ctx.stockId ? "<b>👉 " : ""}${esc(o.name)}（${esc(o.id)}）${sign > 0 ? "+" : "−"}${Math.abs(o.net).toFixed(2)} 億${o.id === ctx.stockId ? "</b>" : ""}`).join("、") || "無";
   const netCell = v => `<td class="${v >= 0 ? "pos" : "neg"}">${signed(v, 1)}</td>`;
-  table.innerHTML = `<details class="fold"${tf.ind ? "" : " open"}><summary>📋 各產業明細（含各法人淨額）＋${esc(tf.whoLabel)}買最多／賣最多的個股</summary><div class="table-wrap"><table class="data-table">` +
+  table.innerHTML = `<details class="fold"><summary>📋 看完整明細：各產業數字表＋${esc(tf.whoLabel)}買最多／賣最多的個股</summary><div class="table-wrap"><table class="data-table">` +
     `<tr><th>產業</th><th>買進</th><th>賣出</th><th>淨額</th><th>佔總買進</th><th>外資淨額</th><th>投信淨額</th><th>自營淨額</th></tr>` +
     tf.rows.map(r => `<tr${tf.ind && r.name === tf.ind.name ? ' class="hl"' : ""}><td>${r.rank}. ${esc(r.name)}</td>` +
       `<td>${r.buy.toFixed(1)}</td><td>${r.sell.toFixed(1)}</td>${netCell(r.net)}<td>${r.buyShare.toFixed(1)}%</td>` +
