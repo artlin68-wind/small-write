@@ -144,6 +144,7 @@
     .dual-score .score-badge .grade { font-size: 34px; }
     table.data-table th, table.data-table td { padding: 6px 5px; font-size: 12.5px; }
     .input-row button { flex: 1 0 100%; padding: 12px 18px; font-size: 16px; }
+    .input-row.btn-group button { flex: 1 1 auto; padding: 8px 10px; font-size: 14px; }
     .score-badge { min-width: 0; flex: 1 0 100%; padding: 12px; }
     .item-list { min-width: 0; }
     table.inst-table th, table.inst-table td { padding: 6px; }
@@ -195,6 +196,22 @@
     </div>
 
     <div class="card">
+      <h2>🔥 台股熱門交易股前 10 名</h2>
+      <p class="caption">最近一個交易日上市＋上櫃個股（不含 ETF）依成交金額或成交量排名。長條長度＝成交金額（或成交量），顏色＝當天漲跌（紅漲綠跌）。點股票名稱可直接分析。資料來源：證交所、櫃買中心每日行情（每個交易日晚上更新）。</p>
+      <div class="input-row no-report btn-group" id="hotBtns" style="gap:6px;margin-bottom:6px"></div>
+      <div class="chart-wrap"><div id="hotChartDiv"></div></div>
+      <div id="hotNote"><div class="info-box"><span class="spinner"></span>熱門股資料載入中…</div></div>
+    </div>
+
+    <div class="card">
+      <h2>🏆 主動式 ETF 績效排名前 10 名</h2>
+      <p class="caption">台股掛牌的主動式股票型 ETF（代號 00xxxA，由經理人選股，不追蹤指數），依所選期間的漲跌幅排名，只比較上市時間夠長、有完整期間資料的 ETF。報酬率以收盤價計算、<b>不含配息</b>，有配息的 ETF 實際報酬會比這裡高一些。點 ETF 名稱可直接分析。資料來源：證交所、櫃買中心、FinMind（每個交易日晚上更新）。</p>
+      <div class="input-row no-report btn-group" id="etfBtns" style="gap:6px;margin-bottom:6px"></div>
+      <div class="chart-wrap"><div id="etfChartDiv"></div></div>
+      <div id="etfNote"><div class="info-box"><span class="spinner"></span>主動式 ETF 資料載入中…</div></div>
+    </div>
+
+    <div class="card">
       <h2>💳 大盤融資餘額（全市場）</h2>
       <p class="caption">融資是散戶借錢買股。看全市場融資餘額與加權指數的同步／背離，以及融資餘額在近半年的相對位置，判斷市場整體槓桿是否過熱。資料來源：證交所、櫃買中心（經 FinMind 彙整），每個交易日晚上更新；固定規則計算，僅供參考。</p>
       <div id="mktMaintAlert"></div>
@@ -209,8 +226,8 @@
     <div class="card">
       <h2>🏭 三大法人買盤／賣盤資金產業分布（大盤）</h2>
       <p class="caption">把全市場（上市＋上櫃）每檔股票的外資、投信、自營商買進與賣出，依官方產業別加總，看法人的錢流進哪些產業、從哪些產業撤出。上排選法人（三大法人合計／外資／投信／自營商），下排選期間。官方只公布買賣「股數」，金額＝股數×當日收盤價，屬估算值；外資含外資自營商，自營商含自行買賣與避險；ETF／ETN 不屬於任何產業，另外列示、不列入排名。分析個股後，會標出該股所屬產業。資料來源：證交所、櫃買中心公開資料（每個交易日晚上 7 點後更新）。紅色＝買進、綠色＝賣出。</p>
-      <div class="input-row no-report" id="instWhoBtns" style="gap:6px;margin-bottom:6px"></div>
-      <div class="input-row no-report" id="instPeriodBtns" style="gap:6px;margin-bottom:6px"></div>
+      <div class="input-row no-report btn-group" id="instWhoBtns" style="gap:6px;margin-bottom:6px"></div>
+      <div class="input-row no-report btn-group" id="instPeriodBtns" style="gap:6px;margin-bottom:6px"></div>
       <div id="instFlowNote"><div class="info-box"><span class="spinner"></span>法人產業資料載入中…</div></div>
       <div class="chart-wrap"><div id="instFlowChartDiv"></div></div>
       <div class="chart-wrap"><div id="instFlowPieDiv"></div></div>
@@ -520,11 +537,31 @@ async function finmindGet(dataset, dataId, days) {
   return finmindGetFrom(dataset, dataId, start.toISOString().slice(0, 10));
 }
 
+// FinMind 只在成功時回 Access-Control-Allow-Origin；出錯（Token 錯、額度用完）時沒有，
+// 瀏覽器會擋掉整個回應，只丟出 TypeError（iPhone 顯示「Load failed」），看不到真正原因。
+const FINMIND_BLOCKED = "FinMind 拒絕了查詢";
+let finmindTokenBad = false;     // 帶 Token 失敗、不帶 Token 卻成功＝Token 有問題
+async function finmindFetch(query) {
+  const url = finmindUrl(query);
+  try {
+    return await fetch(url);
+  } catch (e) {
+    if (!(e instanceof TypeError)) throw e;
+    if (finmindToken()) {
+      try {
+        const res = await fetch(`${FINMIND_BASE}?${query}`);
+        finmindTokenBad = true;
+        return res;
+      } catch (e2) { /* 不帶 Token 也失敗，往下回報 */ }
+    }
+    throw new Error(FINMIND_BLOCKED);
+  }
+}
+
 async function finmindGetFrom(dataset, dataId, startStr) {
   // FinMind v4 目前用 data_id 帶代碼；舊參數名 stock_id 會被回 HTTP 400
-  const url = finmindUrl(`dataset=${dataset}&data_id=${dataId}&start_date=${startStr}`);
   try {
-    const res = await fetch(url);
+    const res = await finmindFetch(`dataset=${dataset}&data_id=${dataId}&start_date=${startStr}`);
     if (!res.ok) {
       // FinMind 會在 body 的 msg 說明原因（例如 Token 填錯回 400「Token is illegal」）
       let msg = "";
@@ -769,7 +806,7 @@ async function fetchStockList() {
   const saved = loadStockListFromStorage();
   if (saved) return (stockListCache = saved);
   try {
-    const res = await fetch(finmindUrl("dataset=TaiwanStockInfo"));
+    const res = await finmindFetch("dataset=TaiwanStockInfo");
     const json = await res.json();
     if (json.status === 200 && Array.isArray(json.data)) {
       stockListCache = json.data
@@ -2990,6 +3027,7 @@ async function runAnalysis() {
   }
   const btn = document.getElementById("analyzeBtn");
   btn.disabled = true;
+  finmindTokenBad = false;
   document.getElementById("resultsArea").classList.add("hidden");
 
   let stockId = query, stockName = "";
@@ -3155,14 +3193,19 @@ async function runAnalysis() {
     };
 
     document.getElementById("resultsArea").classList.remove("hidden");
-    setStatus("✅ 分析完成", "ok");
+    setStatus(finmindTokenBad
+      ? "✅ 分析完成。⚠️ 但「API 設定」裡的 FinMind Token 好像無效（帶 Token 查詢失敗、不帶反而成功），請確認是否貼錯，或清空它。"
+      : "✅ 分析完成", "ok");
     document.getElementById("resultsArea").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) {
     console.error(e);
     const msg = e.message || "";
-    const isConnErr = /failed to fetch|networkerror|load failed/i.test(msg);
-    const hint = isConnErr
-      ? "無法連到 FinMind。請確認裝置目前有連上網路（公司網路／防火牆／防毒軟體有時會擋 api.finmindtrade.com），稍後再試一次。"
+    const blocked = msg === FINMIND_BLOCKED || /failed to fetch|networkerror|load failed/i.test(msg);
+    const hint = blocked
+      ? "最常見的原因是 <b>FinMind 免費查詢額度用完</b>：沒填 Token 時每小時約 300 次，分析一檔約要 16 次；" +
+        "手機用 4G／5G 時常和其他人共用對外 IP，額度可能早被別人用掉。（FinMind 出錯時不讓網頁讀取原因，所以瀏覽器只顯示連線失敗。）<br>" +
+        "解決方式：① 到 finmindtrade.com 免費註冊，把 Token 貼到下方「API 設定」，額度會提高且不再和別人共用；" +
+        "② 或改連 Wi-Fi、等一小時後再試。<br>若已填 Token 仍失敗，請確認 Token 沒有貼錯；也可能是網路（公司防火牆）擋了 api.finmindtrade.com。"
       : "FinMind 可能暫時無回應或當日免費額度已用完，請稍後再試。若持續失敗，可改用桌面版 Streamlit 工具。";
     setStatus(`⚠️ 資料抓取失敗：${esc(msg)}。<br>${hint}`, "error");
   } finally {
@@ -3781,11 +3824,128 @@ function renderHomeIndexes(data) {
     `</div>` + verdictHtml(rsi, "📶") + `<div class="chip-box">${rsi.text}</div>`;
 }
 
+// ── 首頁：熱門交易股、主動式 ETF 績效排名（scripts/fetch_market_home.py 每天存在 data/hot、data/etf）──
+const fetchHotStocks = () => cachedDaily("hotStocks", async () => {
+  const res = await fetch("data/hot/hot_stocks.json", { cache: "no-cache" });
+  if (!res.ok) throw new Error(`hot_stocks HTTP ${res.status}`);
+  return res.json();
+});
+const fetchActiveEtfs = () => cachedDaily("activeEtfs", async () => {
+  const res = await fetch("data/etf/active_etf.json", { cache: "no-cache" });
+  if (!res.ok) throw new Error(`active_etf HTTP ${res.status}`);
+  return res.json();
+});
+
+// 排行長條圖：items = [{ id, name, value, color, right }]；value 可正可負（負值往左畫）
+function renderRankBarSVG(elId, items, title) {
+  const el = document.getElementById(elId);
+  if (!items.length) { el.innerHTML = ""; return; }
+  const W = chartW(), small = W < 600;
+  const fs = small ? 11.5 : 12.5, rowH = small ? 28 : 28, padT = 30;
+  const labelW = small ? 112 : 160, rightW = small ? 104 : 140;
+  const H = padT + items.length * rowH + 8;
+  const plotW = W - labelW - rightW;
+  const hasNeg = items.some(it => it.value < 0), hasPos = items.some(it => it.value > 0);
+  const zero = labelW + (hasNeg && hasPos ? plotW / 2 : hasNeg ? plotW : 0);
+  const half = hasNeg && hasPos ? plotW / 2 : plotW;
+  const max = Math.max(...items.map(it => Math.abs(it.value)), 1e-9);
+  // 手機寬度放不下代號欄就不畫代號；名稱依可用寬度截斷（中文字約一個字型大小寬）
+  const showId = !small, nameW = labelW - 22 - (showId ? 40 : 4);
+  const nameLen = n => [...n].reduce((t, ch) => t + (/[\x00-\x7f]/.test(ch) ? 0.58 : 1), 0);
+  const fit = n => { if (nameLen(n) * fs <= nameW) return n; let o = ""; for (const ch of n) { if (nameLen(o + ch + "…") * fs > nameW) break; o += ch; } return o + "…"; };
+  let s = `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" xmlns="${svgNS}" font-family="inherit">` +
+    `<text x="${W / 2}" y="17" fill="#dfe5ee" font-size="${titleFs(W)}" text-anchor="middle" font-weight="600">${title}</text>`;
+  items.forEach((it, i) => {
+    const y = padT + i * rowH, bh = rowH - 10, w = Math.max(1.5, Math.abs(it.value) / max * (half - 4));
+    const ty = y + rowH / 2 + fs / 2 - 2;
+    const nm = fit(it.name);
+    if (i % 2 === 0) s += `<rect x="0" y="${y}" width="${W}" height="${rowH}" fill="#ffffff" opacity="0.025"/>`;
+    s += `<a href="?stock=${encodeURIComponent(it.id)}"><text x="4" y="${ty}" fill="#8d98aa" font-size="${fs - 1}">${i + 1}</text>` +
+      `<text x="22" y="${ty}" fill="#8fb4ff" font-size="${fs}" text-decoration="underline">${esc(nm)}</text></a>` +
+      (showId ? `<text x="${labelW - 6}" y="${ty}" fill="#6b7588" font-size="${fs - 2}" text-anchor="end">${esc(it.id)}</text>` : "") +
+      `<rect x="${it.value >= 0 ? zero : zero - w}" y="${y + 5}" width="${w}" height="${bh}" rx="2" fill="${it.color}" opacity="0.85"/>` +
+      `<text x="${W - 4}" y="${ty}" fill="${it.rightColor || "#dfe5ee"}" font-size="${fs}" text-anchor="end">${it.right}</text>`;
+  });
+  if (hasNeg && hasPos) s += `<line x1="${zero}" y1="${padT}" x2="${zero}" y2="${H - 6}" stroke="#8d98aa" stroke-width="1"/>`;
+  el.innerHTML = s + `</svg>`;
+}
+
+const UP_C = "#ff5c5c", DOWN_C = "#3ecf74", FLAT_C = "#8d98aa";
+const chgColor = v => (v > 0 ? UP_C : v < 0 ? DOWN_C : FLAT_C);
+const chgText = v => (v > 0 ? "#ff7a7a" : v < 0 ? "#5fe08f" : "#a3adbd");
+const pctTxt = v => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(2)}%`;
+
+const hotView = { by: "value" };
+const HOT_TOP = 10;
+function renderHotStocks(data) {
+  const note = document.getElementById("hotNote"), btns = document.getElementById("hotBtns");
+  if (!data) {
+    btns.innerHTML = ""; document.getElementById("hotChartDiv").innerHTML = "";
+    note.innerHTML = `<div class="info-box">熱門股資料尚未產生，請執行 <code>python scripts/fetch_market_home.py</code>（或等每日排程更新）</div>`;
+    return;
+  }
+  instBtns(btns, [["value", "依成交金額"], ["volume", "依成交量"]], hotView.by, v => { hotView.by = v; renderHotStocks(data); });
+  const byValue = hotView.by === "value";
+  const list = (byValue ? data.by_value : data.by_volume).slice(0, HOT_TOP);
+  renderRankBarSVG("hotChartDiv", list.map(r => ({
+    id: r.id, name: r.name, value: byValue ? r.value : r.lots, color: chgColor(r.chg_pct), rightColor: chgText(r.chg_pct),
+    right: `${byValue ? `${r.value.toFixed(r.value >= 100 ? 0 : 1)}億` : `${(r.lots / 1000).toFixed(r.lots >= 100000 ? 0 : 1)}千張`} ${pctTxt(r.chg_pct)}`,
+  })), `${byValue ? "成交金額" : "成交量"}前 ${HOT_TOP} 名（${data.date.slice(5)}）`);
+  const total = list.reduce((t, r) => t + r.value, 0);
+  const up = list.filter(r => r.chg_pct > 0).length, down = list.filter(r => r.chg_pct < 0).length;
+  const inds = {};
+  list.forEach(r => { if (r.industry) inds[r.industry] = (inds[r.industry] || 0) + 1; });
+  const topInd = Object.entries(inds).sort((a, b) => b[1] - a[1])[0];
+  note.innerHTML =
+    `<div class="item-row">前 ${HOT_TOP} 名中 <b style="color:#ff7a7a">${up} 檔上漲</b>、<b style="color:#5fe08f">${down} 檔下跌</b>` +
+    (byValue ? `，合計成交 ${Math.round(total).toLocaleString()} 億元` : "") +
+    (topInd && topInd[1] >= 3 ? `；其中 ${topInd[1]} 檔屬於「${esc(topInd[0])}」，資金集中在這個族群` : "") + `。</div>` +
+    `<p class="caption">資料日 ${esc(data.date)}，更新於 ${esc(data.updated)}</p>`;
+}
+
+const ETF_PERIOD_OPTS = [["w1", "近 1 週"], ["m1", "近 1 月"], ["m3", "近 3 月"], ["m6", "近 6 月"], ["ytd", "今年以來"], ["all", "上市以來"]];
+const etfView = { p: "m1" };
+const ETF_TOP = 10;
+function renderActiveEtfs(data) {
+  const note = document.getElementById("etfNote"), btns = document.getElementById("etfBtns");
+  if (!data || !data.etfs || !data.etfs.length) {
+    btns.innerHTML = ""; document.getElementById("etfChartDiv").innerHTML = "";
+    note.innerHTML = `<div class="info-box">主動式 ETF 資料尚未產生，請執行 <code>python scripts/fetch_market_home.py</code>（或等每日排程更新）</div>`;
+    return;
+  }
+  instBtns(btns, ETF_PERIOD_OPTS, etfView.p, v => { etfView.p = v; renderActiveEtfs(data); });
+  const p = etfView.p, label = ETF_PERIOD_OPTS.find(o => o[0] === p)[1];
+  const ok = data.etfs.filter(e => e.ret[p] !== null && e.ret[p] !== undefined).sort((a, b) => b.ret[p] - a.ret[p]);
+  const top = ok.slice(0, ETF_TOP);
+  renderRankBarSVG("etfChartDiv", top.map(e => ({
+    id: e.id, name: e.name.replace(/^主動/, ""), value: e.ret[p], color: chgColor(e.ret[p]), rightColor: chgText(e.ret[p]),
+    right: pctTxt(e.ret[p]),
+  })), `主動式 ETF ${label}報酬率前 ${ETF_TOP} 名`);
+  const pos = ok.filter(e => e.ret[p] > 0).length;
+  const avg = ok.length ? ok.reduce((t, e) => t + e.ret[p], 0) / ok.length : 0;
+  const best = top[0], worst = ok[ok.length - 1];
+  note.innerHTML = !ok.length ? `<div class="info-box">目前沒有 ETF 上市滿「${label}」，請改選較短的期間</div>` :
+    `<div class="metric-grid">` +
+    metricHtml("比較檔數", `${ok.length} 檔`, `共 ${data.etfs.length} 檔主動式 ETF`) +
+    metricHtml(`${label}平均`, pctTxt(avg), `${pos} 檔上漲／${ok.length - pos} 檔下跌`, chgText(avg)) +
+    metricHtml("第 1 名", esc(best.name.replace(/^主動/, "")), `${esc(best.id)}　${pctTxt(best.ret[p])}`, chgText(best.ret[p])) +
+    metricHtml("最後 1 名", esc(worst.name.replace(/^主動/, "")), `${esc(worst.id)}　${pctTxt(worst.ret[p])}`, chgText(worst.ret[p])) +
+    `</div>` +
+    `<p class="caption">資料日 ${esc(data.date)}，更新於 ${esc(data.updated)}。${ok.length < data.etfs.length ? `另有 ${data.etfs.length - ok.length} 檔上市未滿${label}，不列入此期間排名。` : ""}「上市以來」以掛牌第一天收盤價為基準，不是發行價。</p>`;
+}
+
 // 首頁大盤區：開頁就載入，不需輸入股票
-let homeMarket = { mkt: null, mm: null, idx: null };
-function redrawMarketHome() { renderHomeIndexes(homeMarket.idx); renderMarketMargin(homeMarket.mkt, homeMarket.mm); renderInstFlow(); }
+let homeMarket = { mkt: null, mm: null, idx: null, hot: null, etf: null };
+function redrawMarketHome() {
+  renderHomeIndexes(homeMarket.idx); renderHotStocks(homeMarket.hot); renderActiveEtfs(homeMarket.etf);
+  renderMarketMargin(homeMarket.mkt, homeMarket.mm); renderInstFlow();
+}
 async function loadMarketHome() {
   renderInstFlow();
+  fetchHotStocks().then(d => { homeMarket.hot = d; }).catch(e => console.error("讀取熱門股失敗：", e))
+    .finally(() => renderHotStocks(homeMarket.hot));
+  fetchActiveEtfs().then(d => { homeMarket.etf = d; }).catch(e => console.error("讀取主動式 ETF 失敗：", e))
+    .finally(() => renderActiveEtfs(homeMarket.etf));
   fetchHomeIndexes()
     .then(d => { homeMarket.idx = d; })
     .catch(e => console.error("抓取首頁指標失敗：", e))
