@@ -182,6 +182,42 @@
     </details>
   </div>
 
+  <div id="marketHome">
+
+    <div class="card">
+      <h2>🌎 大盤指標｜美股費半、道瓊、那斯達克、VIX 恐慌指數＋加權指數 RSI</h2>
+      <p class="caption">美股收盤在台灣時間清晨，所以這裡顯示的是「美股最近一個交易日」的收盤與漲跌，台股開盤前可先看方向；費半與台股電子權值股連動最高。VIX 是美股的恐慌指數，數字越高代表市場越恐慌。RSI（相對強弱指標）用加權指數收盤計算，70 以上為超買、30 以下為超賣。資料來源：FinMind（每個交易日晚上更新），固定規則計算，僅供參考。紅色＝上漲、綠色＝下跌。</p>
+      <div id="usIdxNote"><div class="info-box"><span class="spinner"></span>美股指數載入中…</div></div>
+      <div class="chart-wrap"><div id="usIdxChartDiv"></div></div>
+      <h3>加權指數 RSI（相對強弱指標）</h3>
+      <div class="chart-wrap"><div id="rsiChartDiv"></div></div>
+      <div id="rsiNote"></div>
+    </div>
+
+    <div class="card">
+      <h2>💳 大盤融資餘額（全市場）</h2>
+      <p class="caption">融資是散戶借錢買股。看全市場融資餘額與加權指數的同步／背離，以及融資餘額在近半年的相對位置，判斷市場整體槓桿是否過熱。資料來源：證交所、櫃買中心（經 FinMind 彙整），每個交易日晚上更新；固定規則計算，僅供參考。</p>
+      <div id="mktMaintAlert"></div>
+      <div class="chart-wrap"><div id="mktMarginChartDiv"></div></div>
+      <div id="mktMarginNote"><div class="info-box"><span class="spinner"></span>大盤融資資料載入中…</div></div>
+      <h3>大盤融資維持率（估算）</h3>
+      <p class="caption">融資維持率＝融資買進股票的市值÷向券商借的錢，剛買進時約 167%，跌破 <b>130%</b> 會被追繳、斷頭。官方大盤維持率需 FinMind 付費會員，這裡用加權指數漲跌推算融資擔保品市值，屬估算值。</p>
+      <div class="chart-wrap"><div id="maintChartDiv"></div></div>
+      <div id="maintMktNote"></div>
+    </div>
+
+    <div class="card">
+      <h2>🏭 三大法人買盤／賣盤資金產業分布（大盤）</h2>
+      <p class="caption">把全市場（上市＋上櫃）每檔股票的外資、投信、自營商買進與賣出，依官方產業別加總，看法人的錢流進哪些產業、從哪些產業撤出。上排選法人（三大法人合計／外資／投信／自營商），下排選期間。官方只公布買賣「股數」，金額＝股數×當日收盤價，屬估算值；外資含外資自營商，自營商含自行買賣與避險；ETF／ETN 不屬於任何產業，另外列示、不列入排名。分析個股後，會標出該股所屬產業。資料來源：證交所、櫃買中心公開資料（每個交易日晚上 7 點後更新）。紅色＝買進、綠色＝賣出。</p>
+      <div class="input-row no-report" id="instWhoBtns" style="gap:6px;margin-bottom:6px"></div>
+      <div class="input-row no-report" id="instPeriodBtns" style="gap:6px;margin-bottom:6px"></div>
+      <div id="instFlowNote"><div class="info-box"><span class="spinner"></span>法人產業資料載入中…</div></div>
+      <div class="chart-wrap"><div id="instFlowChartDiv"></div></div>
+      <div id="instFlowTable"></div>
+    </div>
+
+  </div>
+
   <div id="resultsArea" class="hidden">
 
     <div class="card">
@@ -333,20 +369,14 @@
     </div>
 
     <div class="card">
-      <h2>💳 融資水位評估（個股＋大盤）</h2>
-      <p class="caption">融資是散戶借錢買股。融資水位越高，籌碼越凌亂，股價回檔時容易因追繳、斷頭引發多殺多。個股看「融資使用率」（融資餘額÷融資限額）、融資餘額在近半年的相對位置、券資比，以及近 20 個交易日融資與股價的同步／背離；大盤看全市場融資餘額與加權指數的關係。固定規則計算，僅供參考。</p>
+      <h2>💳 個股融資水位評估</h2>
+      <p class="caption">融資是散戶借錢買股。融資水位越高，籌碼越凌亂，股價回檔時容易因追繳、斷頭引發多殺多。看「融資使用率」（融資餘額÷融資限額）、融資餘額在近半年的相對位置、券資比，以及近 20 個交易日融資與股價的同步／背離，並與首頁的大盤融資比較。固定規則計算，僅供參考。</p>
       <div id="maintAlert"></div>
-      <h3>個股融資水位</h3>
       <div class="chart-wrap"><div id="marginLvChartDiv"></div></div>
       <div id="marginLvNote"></div>
-      <h3>大盤與融資水位的關係</h3>
-      <div class="chart-wrap"><div id="mktMarginChartDiv"></div></div>
-      <div id="mktMarginNote"></div>
-      <h3>融資維持率警示（估算）</h3>
-      <p class="caption">融資維持率＝融資買進股票的市值÷向券商借的錢。剛買進時約 167%（上市借 6 成）或 200%（上櫃借 5 成），跌破 <b>130%</b> 會被追繳，補不足就被「斷頭」強制賣出。官方大盤維持率需 FinMind 付費會員，這裡用每日新增融資與當日價格推算融資平均成本（個股）、用加權指數漲跌推算融資擔保品市值（大盤），屬估算值；個股若被調降融資成數，實際維持率會不同。</p>
+      <h3>個股融資維持率警示（估算）</h3>
+      <p class="caption">剛買進時約 167%（上市借 6 成）或 200%（上櫃借 5 成），跌破 <b>130%</b> 會被追繳，補不足就被「斷頭」強制賣出。這裡用每日新增融資與當日價格推算融資平均成本，屬估算值；個股若被調降融資成數，實際維持率會不同。</p>
       <div id="maintStockNote"></div>
-      <div class="chart-wrap"><div id="maintChartDiv"></div></div>
-      <div id="maintMktNote"></div>
     </div>
 
     <div class="card">
@@ -358,16 +388,6 @@
       <h3>台指期未平倉口數</h3>
       <div class="chart-wrap"><div id="oiChartDiv"></div></div>
       <div id="oiNote"></div>
-    </div>
-
-    <div class="card">
-      <h2>🏭 三大法人買盤／賣盤資金產業分布（大盤）</h2>
-      <p class="caption">把全市場（上市＋上櫃）每檔股票的外資、投信、自營商買進與賣出，依官方產業別加總，看法人的錢流進哪些產業、從哪些產業撤出。上排選法人（三大法人合計／外資／投信／自營商），下排選期間。官方只公布買賣「股數」，金額＝股數×當日收盤價，屬估算值；外資含外資自營商，自營商含自行買賣與避險；ETF／ETN 不屬於任何產業，另外列示、不列入排名。資料來源：證交所、櫃買中心公開資料（每個交易日晚上 7 點後更新）。紅色＝買進、綠色＝賣出。</p>
-      <div class="input-row no-report" id="instWhoBtns" style="gap:6px;margin-bottom:6px"></div>
-      <div class="input-row no-report" id="instPeriodBtns" style="gap:6px;margin-bottom:6px"></div>
-      <div id="instFlowNote"><div class="info-box">尚未載入</div></div>
-      <div class="chart-wrap"><div id="instFlowChartDiv"></div></div>
-      <div id="instFlowTable"></div>
     </div>
 
     <div class="card">
@@ -574,23 +594,68 @@ function cachedDaily(key, loader) {
 const fetchTaiex = () => cachedDaily("taiex", () => finmindGet("TaiwanStockPrice", "TAIEX", 200));
 
 // 全市場融資餘額（億元）＋加權指數收盤
-let marketMarginCache = null;
-async function fetchMarketMargin(days = 200) {
-  const day = new Date().toDateString();
-  if (marketMarginCache && marketMarginCache.day === day) return marketMarginCache.rows;
-  const [mkt, idx] = await Promise.all([
-    finmindGet("TaiwanStockTotalMarginPurchaseShortSale", "", days),
-    fetchTaiex(),
-  ]);
+function joinMarketMargin(mkt, idx) {
   const closeByDate = new Map(idx.map(r => [r.date, Number(r.close)]));
-  const rows = mkt
+  return mkt
     .filter(r => r.name === "MarginPurchaseMoney")
     .map(r => ({ date: r.date, money: Number(r.TodayBalance) / 1e8, buy: (Number(r.buy) || 0) / 1e8, index: closeByDate.get(r.date) }))
     .filter(r => r.money > 0 && r.index > 0)
     .sort((a, b) => a.date.localeCompare(b.date));
-  if (rows.length) marketMarginCache = { day, rows };
-  return rows;
 }
+// 先讀 scripts/fetch_market_margin.py 每天存在 data/margin 的檔案（不佔 FinMind 額度）；
+// 檔案不存在或超過 4 天沒更新時，才直接向 FinMind 抓
+const MARGIN_LOCAL_MAX_AGE = 4 * 86400e3;
+async function getLocalData(path) {
+  const res = await fetch(path, { cache: "no-cache" });
+  if (!res.ok) throw new Error(`${path} HTTP ${res.status}`);
+  return (await res.json()).data || [];
+}
+const isFresh = rows => rows.length > 0 &&
+  Date.now() - new Date(rows.reduce((m, r) => (r.date > m ? r.date : m), "")).getTime() <= MARGIN_LOCAL_MAX_AGE;
+
+// 首頁指標：加權指數（算 RSI）＋美股費半／道瓊／那斯達克／VIX；同樣先讀 data 資料夾，過期才問 FinMind
+const US_IDX = [
+  { id: "^SOX", name: "費城半導體", color: "#ff9f43" },
+  { id: "^DJI", name: "道瓊工業", color: "#5b9bff" },
+  { id: "^IXIC", name: "那斯達克", color: "#c792ea" },
+  { id: "^VIX", name: "VIX 恐慌指數", color: "#f1c40f" },
+];
+const fetchHomeIndexes = () => cachedDaily("homeIdx", async () => {
+  let taiex = await getLocalData("data/margin/taiex_price.json").catch(() => []);
+  if (!isFresh(taiex)) taiex = await fetchTaiex().catch(() => taiex);
+  let us = await getLocalData("data/us_index/us_index.json").catch(() => []);
+  if (!isFresh(us)) {
+    try {
+      const res = await Promise.all(US_IDX.map(x => finmindGet("USStockPrice", encodeURIComponent(x.id), 120)));
+      const rows = res.flat().map(r => ({ date: r.date, stock_id: r.stock_id, close: r.Close }));
+      if (rows.length) us = rows;
+    } catch (e) { console.warn("FinMind 美股指數抓取失敗，改用本機舊資料：", e); }
+  }
+  const clean = rows => rows.map(r => ({ date: r.date, close: Number(r.close) })).filter(r => r.close > 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const byId = {};
+  US_IDX.forEach(x => { byId[x.id] = clean(us.filter(r => r.stock_id === x.id)); });
+  return { taiex: clean(taiex), us: byId };
+});
+
+const fetchMarketMargin = () => cachedDaily("marketMargin", async () => {
+  let local = [];
+  try {
+    const get = getLocalData;
+    const [mkt, idx] = await Promise.all([get("data/margin/market_total_margin.json"), get("data/margin/taiex_price.json")]);
+    local = joinMarketMargin(mkt, idx);
+  } catch (e) { console.warn("讀取本機大盤融資檔失敗，改向 FinMind 抓：", e); }
+  if (local.length && Date.now() - new Date(lastOf(local).date).getTime() <= MARGIN_LOCAL_MAX_AGE) return local;
+  try {
+    const [mkt, idx] = await Promise.all([finmindGet("TaiwanStockTotalMarginPurchaseShortSale", "", 200), fetchTaiex()]);
+    const rows = joinMarketMargin(mkt, idx);
+    if (rows.length && (!local.length || lastOf(rows).date >= lastOf(local).date)) return rows;
+  } catch (e) {
+    if (!local.length) throw e;
+    console.warn("FinMind 大盤融資抓取失敗，改用本機舊資料：", e);
+  }
+  return local;
+});
 
 // 三大法人買賣資金產業分布：scripts/fetch_inst_flow.py 每天抓好放在 data/inst_flow（證交所不開放瀏覽器跨網域）
 const fetchInstFlowSummary = () => cachedDaily("instFlowSummary", async () => {
@@ -2712,6 +2777,8 @@ async function onShotClick() {
 function buildReportHtml() {
   const live = document.getElementById("resultsArea");
   const area = live.cloneNode(true);
+  // 首頁的大盤融資、法人產業分布也放進報告（接在個股分析後面）
+  area.append(...document.getElementById("marketHome").cloneNode(true).children);
   area.querySelectorAll("[data-key]").forEach(el => {
     const src = live.querySelector(`[data-key="${el.dataset.key}"]`);
     const b = document.createElement("b");
@@ -2969,7 +3036,7 @@ async function runAnalysis() {
       fetchFundamentals(stockId),
       fetchOfficialProfile(stockId),
       // 大盤融資只是輔助資訊，抓不到不影響其他分析
-      fetchMarketMargin(200).catch(e => { console.error("抓取大盤融資失敗：", e); return []; }),
+      fetchMarketMargin().catch(e => { console.error("抓取大盤融資失敗：", e); return []; }),
       fetchFutures().catch(e => { console.error("抓取台指期資料失敗：", e); return null; }),
       fetchTaiex().catch(() => []),
     ]);
@@ -3045,15 +3112,14 @@ async function runAnalysis() {
     const marginLv = calcMarginLevel(marginRows, priceRows);
     const mktMargin = calcMarketMargin(mktMarginRows);
     const stockMaint = calcStockMaintenance(marginRows, priceRows, hit && hit.type === "tpex" ? 0.5 : 0.6);
-    const mktMaint = calcMarketMaintenance(mktMarginRows);
-    renderMarginLevel(marginLv, mktMargin, priceRows, sname, stockMaint, mktMaint);
+    renderMarginLevel(marginLv, mktMargin, priceRows, sname, stockMaint);
 
     // 法人期貨空單＋未平倉
     const futPos = calcFuturesPosition(futData);
     const futOi = calcOpenInterest(futData, futPos);
     renderFutures(futPos, futOi, taiexRows);
 
-    // 三大法人買賣資金產業分布（大盤資料，讀同網域 data/inst_flow，不擋其他分析）
+    // 首頁的三大法人產業分布改為標出本股所屬產業
     instView.ctx = { stockId, official, industry };
     renderInstFlow();
 
@@ -3080,9 +3146,9 @@ async function runAnalysis() {
       renderPriceChartSVG(priceRows, sname);
       renderFundamentalCharts();
       renderFxEval(fx, sname);
-      renderMarginLevel(marginLv, mktMargin, priceRows, sname, stockMaint, mktMaint);
+      redrawMarketHome();
+      renderMarginLevel(marginLv, mktMargin, priceRows, sname, stockMaint);
       renderFutures(futPos, futOi, taiexRows);
-      renderInstFlow();
       updateWave(priceRows, sname);
       updateFib(priceRows, sname);
     };
@@ -3117,11 +3183,23 @@ function updateWave(priceRows, sname) {
   }
 }
 
-function renderMarginLevel(lv, mkt, priceRows, sname, sm, mm) {
+const verdictHtml = (o, icon) => `<div class="verdict" style="background:${o.color}18;border-color:${o.color};color:${o.color}">${icon} ${o.level}</div>`;
+const relHtml = r => `<div class="item-row">${r.icon} ${r.text}</div>`;
+
+// 個股融資水位（分析結果區）；mkt 只用來比較個股與大盤的融資增速
+function renderMarginLevel(lv, mkt, priceRows, sname, sm) {
   const lotFmt = v => Math.round(v).toLocaleString();
-  const verdict = (o, icon) => `<div class="verdict" style="background:${o.color}18;border-color:${o.color};color:${o.color}">${icon} ${o.level}</div>`;
-  renderMaintenance(sm, mm, sname, verdict);
-  const relHtml = r => `<div class="item-row">${r.icon} ${r.text}</div>`;
+  const verdict = verdictHtml;
+  renderStockMaintenance(sm, sname);
+  // 個股融資增速與大盤比較：看散戶對這檔的槓桿偏好是否高於整體市場
+  let vsTxt = "";
+  if (lv && mkt && lv.marginChg !== null && mkt.marginChg !== null) {
+    const diff = lv.marginChg - mkt.marginChg;
+    const judge = diff >= 10 ? "明顯高於大盤，散戶槓桿集中在這檔，要留意籌碼凌亂"
+      : diff <= -10 ? "明顯低於大盤，這檔的融資相對退場，籌碼比大盤乾淨"
+      : "與大盤相近";
+    vsTxt = `<div class="item-row">📊 本股融資 ${MARGIN_CHG_N} 日 ${signed(lv.marginChg, 1)}%，全市場融資 ${signed(mkt.marginChg, 1)}%：${judge}。</div>`;
+  }
 
   const stockChart = document.getElementById("marginLvChartDiv"), stockNote = document.getElementById("marginLvNote");
   if (!lv) {
@@ -3144,27 +3222,24 @@ function renderMarginLevel(lv, mkt, priceRows, sname, sm, mm) {
       verdict(lv, "💳") +
       `<div class="chip-box">${lv.text}</div>` +
       `<div class="item-row"><b>近 ${MARGIN_CHG_N} 個交易日融資 vs 股價：</b></div>` + relHtml(lv.rel) +
-      (lv.shortNote ? `<div class="item-row">🔁 ${lv.shortNote}</div>` : "");
+      (lv.shortNote ? `<div class="item-row">🔁 ${lv.shortNote}</div>` : "") + vsTxt;
   }
+}
 
+// 大盤融資餘額＋大盤估算維持率（首頁，不需輸入股票）
+function renderMarketMargin(mkt, mm) {
   const mktChart = document.getElementById("mktMarginChartDiv"), mktNote = document.getElementById("mktMarginNote");
+  document.getElementById("mktMaintAlert").innerHTML = mm && mm.ratio < 150
+    ? `<div class="warn-box"><b>🚨 融資維持率警示</b>：大盤估算融資維持率 <b>${mm.ratio.toFixed(1)}%</b>（${mm.level}）</div>` : "";
+  renderMarketMaintenance(mm);
   if (!mkt) {
     mktChart.innerHTML = "";
-    mktNote.innerHTML = `<div class="info-box">大盤融資資料暫時抓不到（可能是 FinMind 免費額度用完），稍後再試</div>`;
+    mktNote.innerHTML = `<div class="info-box">大盤融資資料暫時抓不到（本機 data/margin 沒有資料，FinMind 也沒回應或免費額度用完），稍後再試</div>`;
     return;
   }
   renderDualLineSVG("mktMarginChartDiv", mkt.view.map(r => r.date),
     mkt.view.map(r => r.index), mkt.view.map(r => r.money),
     "加權指數 vs 全市場融資餘額（近半年）", "加權指數", "融資餘額（億元）", v => v.toFixed(0), v => v.toFixed(0));
-  // 個股融資增速與大盤比較：看散戶對這檔的槓桿偏好是否高於整體市場
-  let vsTxt = "";
-  if (lv && lv.marginChg !== null && mkt.marginChg !== null) {
-    const diff = lv.marginChg - mkt.marginChg;
-    const judge = diff >= 10 ? "明顯高於大盤，散戶槓桿集中在這檔，要留意籌碼凌亂"
-      : diff <= -10 ? "明顯低於大盤，這檔的融資相對退場，籌碼比大盤乾淨"
-      : "與大盤相近";
-    vsTxt = `<div class="item-row">📊 本股融資 ${MARGIN_CHG_N} 日 ${signed(lv.marginChg, 1)}%，全市場融資 ${signed(mkt.marginChg, 1)}%：${judge}。</div>`;
-  }
   mktNote.innerHTML =
     `<div class="metric-grid">` +
     metricHtml("全市場融資餘額", `${Math.round(mkt.last.money).toLocaleString()} 億`, `資料日 ${mkt.last.date.slice(5)}`) +
@@ -3172,10 +3247,9 @@ function renderMarginLevel(lv, mkt, priceRows, sname, sm, mm) {
     metricHtml(`加權指數 ${MARGIN_CHG_N} 日變化`, `${signed(mkt.indexChg, 1)}%`, `${mkt.ref.index.toFixed(0)} → ${mkt.last.index.toFixed(0)}`) +
     metricHtml("融資半年區間位置", `${(mkt.pos * 100).toFixed(0)}%`, `指數位置 ${(mkt.idxPos * 100).toFixed(0)}%`) +
     `</div>` +
-    verdict(mkt, "🏛️") +
+    verdictHtml(mkt, "🏛️") +
     `<div class="chip-box">${mkt.text}</div>` +
-    `<div class="item-row"><b>近 ${MARGIN_CHG_N} 個交易日融資 vs 加權指數：</b></div>` + relHtml(mkt.rel) + vsTxt +
-    "";
+    `<div class="item-row"><b>近 ${MARGIN_CHG_N} 個交易日融資 vs 加權指數：</b></div>` + relHtml(mkt.rel);
 }
 
 function renderFutures(fp, oi, taiexRows) {
@@ -3233,7 +3307,7 @@ const INST_KINDS = [
   { key: "trust", label: "投信", i: 1 },
   { key: "dealer", label: "自營商", i: 2 },
 ];
-const instView = { n: 5, who: "all", ctx: null };
+const instView = { n: 5, who: "all", ctx: { stockId: "", official: null, industry: "" } };   // 首頁未選股票時 stockId 為空
 
 function yi(v) { return `${v.toFixed(Math.abs(v) >= 100 ? 0 : 1)} 億`; }
 function signedYi(v) { return `${v >= 0 ? "+" : "−"}${yi(Math.abs(v))}`; }
@@ -3371,7 +3445,6 @@ function instBtns(el, items, current, onPick) {
 
 async function renderInstFlow() {
   const ctx = instView.ctx;
-  if (!ctx) return;
   const note = document.getElementById("instFlowNote"), chart = document.getElementById("instFlowChartDiv"),
         table = document.getElementById("instFlowTable"), whoEl = document.getElementById("instWhoBtns"),
         btns = document.getElementById("instPeriodBtns");
@@ -3432,11 +3505,11 @@ async function renderInstFlow() {
     }).join("") + `</details>`;
 }
 
-function renderMaintenance(sm, mm, sname, verdict) {
-  // 卡片頂端警示：個股或大盤估算維持率低於 150% 時特別提醒
+function renderStockMaintenance(sm, sname) {
+  const verdict = verdictHtml;
+  // 卡片頂端警示：個股估算維持率低於 150% 時特別提醒
   const alerts = [];
   if (sm && sm.ratio < 150) alerts.push(`${esc(sname)} 估算融資維持率 <b>${sm.ratio.toFixed(1)}%</b>（${sm.level}），追繳價約 ${fmtP(sm.callPrice)} 元`);
-  if (mm && mm.ratio < 150) alerts.push(`大盤估算融資維持率 <b>${mm.ratio.toFixed(1)}%</b>（${mm.level}）`);
   document.getElementById("maintAlert").innerHTML = alerts.length
     ? `<div class="warn-box"><b>🚨 融資維持率警示</b><ul class="flag-list">${alerts.map(a => `<li>${a}</li>`).join("")}</ul></div>` : "";
 
@@ -3449,7 +3522,10 @@ function renderMaintenance(sm, mm, sname, verdict) {
       metricHtml("130% 追繳價（估）", `${fmtP(sm.callPrice)} 元`, sm.callDist > 0 ? `再跌 ${sm.callDist.toFixed(1)}% 觸發` : "已低於追繳價", sm.callDist < 10 ? "#ff7a7a" : undefined) +
       metricHtml("推算天數", `${sm.days} 天`, "天數越多越準") +
       `</div>` + verdict(sm, "🧮") + `<div class="chip-box">${sm.text}</div>`;
+}
 
+function renderMarketMaintenance(mm) {
+  const verdict = verdictHtml;
   const mEl = document.getElementById("maintMktNote"), cEl = document.getElementById("maintChartDiv");
   if (!mm) {
     cEl.innerHTML = "";
@@ -3500,7 +3576,171 @@ function updateFib(priceRows, sname) {
     ).join("") + `</table>`;
 }
 
-let redrawCharts = null;
+// ── 首頁大盤指標：RSI＋美股指數＋VIX ───────────────────────────
+// RSI 用 Wilder 平滑法（與一般看盤軟體相同）；回傳與 closes 等長的陣列，前 n 筆為 null
+function calcRSI(closes, n) {
+  const out = closes.map(() => null);
+  if (closes.length <= n) return out;
+  let up = 0, dn = 0;
+  for (let i = 1; i <= n; i++) { const d = closes[i] - closes[i - 1]; if (d > 0) up += d; else dn -= d; }
+  up /= n; dn /= n;
+  const val = () => (dn === 0 ? 100 : 100 - 100 / (1 + up / dn));
+  out[n] = val();
+  for (let i = n + 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
+    up = (up * (n - 1) + Math.max(d, 0)) / n;
+    dn = (dn * (n - 1) + Math.max(-d, 0)) / n;
+    out[i] = val();
+  }
+  return out;
+}
+
+const RSI_VIEW_N = 90;    // 圖上畫近幾個交易日
+function calcTaiexRsi(rows) {
+  if (rows.length < 30) return null;
+  const closes = rows.map(r => r.close);
+  const r6 = calcRSI(closes, 6), r14 = calcRSI(closes, 14);
+  const from = Math.max(14, rows.length - RSI_VIEW_N);
+  const view = rows.slice(from).map((r, k) => ({ date: r.date, close: r.close, r6: r6[from + k], r14: r14[from + k] }));
+  const last = lastOf(view), prev = view[view.length - 2];
+  const v = last.r14;
+  let level, color, text;
+  if (v >= 80) { level = "RSI 嚴重超買"; color = "#ff5c5c"; text = "加權指數短線漲多、過熱，追高風險大，留意拉回。"; }
+  else if (v >= 70) { level = "RSI 超買區"; color = "#f39c4a"; text = "多頭動能強但已偏熱，短線容易震盪整理，不宜追高。"; }
+  else if (v <= 20) { level = "RSI 嚴重超賣"; color = "#3ecf74"; text = "加權指數短線跌深，恐慌賣壓可能接近尾聲，可留意止跌反彈訊號。"; }
+  else if (v <= 30) { level = "RSI 超賣區"; color = "#3ecf74"; text = "賣壓偏重但已進入超賣，跌勢可能趨緩，等止跌訊號再進場。"; }
+  else if (v >= 50) { level = "RSI 偏多"; color = "#8fb4ff"; text = "RSI 在 50 以上，多方略佔優勢，尚未過熱。"; }
+  else { level = "RSI 偏空"; color = "#e67e22"; text = "RSI 在 50 以下，空方略佔優勢，尚未超賣。"; }
+  // 短線 RSI6 與 RSI14 交叉
+  if (prev && prev.r6 !== null && prev.r14 !== null) {
+    if (prev.r6 <= prev.r14 && last.r6 > last.r14) text += "<br>📈 RSI6 剛向上穿越 RSI14（黃金交叉），短線動能轉強。";
+    else if (prev.r6 >= prev.r14 && last.r6 < last.r14) text += "<br>📉 RSI6 剛向下跌破 RSI14（死亡交叉），短線動能轉弱。";
+  }
+  return { view, last, level, color, text };
+}
+
+function renderRsiChartSVG(elId, view) {
+  const W = chartW(), H = chartH(220), padT = 34, padB = 22, padR = 40;
+  const n = view.length, plotW = W - PAD.L - padR, plotH = H - padT - padB, step = plotW / n;
+  const cx = i => PAD.L + step * (i + 0.5), y = v => padT + (1 - v / 100) * plotH;
+  let svg = `<text x="${W / 2}" y="18" font-size="${titleFs(W)}" fill="#8fb4ff" text-anchor="middle" font-weight="700">加權指數 RSI（<tspan fill="#f1c40f">RSI6</tspan>／<tspan fill="#5b9bff">RSI14</tspan>）</text>`;
+  svg += `<rect x="${PAD.L}" y="${y(100)}" width="${plotW}" height="${y(70) - y(100)}" fill="#ff5c5c" opacity="0.08"/>`;
+  svg += `<rect x="${PAD.L}" y="${y(30)}" width="${plotW}" height="${y(0) - y(30)}" fill="#3ecf74" opacity="0.08"/>`;
+  [[70, "#ff7a7a", "70 超買"], [50, "#6b7588", "50"], [30, "#5fe08f", "30 超賣"]].forEach(([v, col, label]) => {
+    const yy = y(v).toFixed(1);
+    svg += `<line x1="${PAD.L}" y1="${yy}" x2="${W - padR}" y2="${yy}" stroke="${col}" stroke-width="1" stroke-dasharray="4 3"/>`;
+    svg += `<text x="${PAD.L - 6}" y="${(+yy + 3).toFixed(1)}" font-size="10" fill="${col}" text-anchor="end">${label}</text>`;
+  });
+  [["r6", "#f1c40f", 1.3], ["r14", "#5b9bff", 1.9]].forEach(([k, col, sw]) => {
+    const pts = view.map((r, i) => (r[k] === null ? null : `${cx(i).toFixed(1)},${y(r[k]).toFixed(1)}`)).filter(Boolean).join(" ");
+    svg += `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="${sw}"/>`;
+  });
+  svg += `<circle cx="${cx(n - 1).toFixed(1)}" cy="${y(lastOf(view).r14).toFixed(1)}" r="4" fill="#5b9bff" stroke="#0f141c" stroke-width="1.5"/>`;
+  svg += xLabelsSvg(view.map(r => r.date), padT, plotH, plotW, step);
+  document.getElementById(elId).innerHTML =
+    `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" xmlns="${svgNS}">${svg}</svg>`;
+}
+
+// 美股三大指數：以期間第一天為 0%，畫累積漲跌幅，方便比較強弱
+const US_VIEW_N = 60;
+function renderUsIdxChartSVG(elId, us) {
+  const series = US_IDX.filter(x => x.id !== "^VIX").map(x => ({ ...x, rows: (us[x.id] || []).slice(-US_VIEW_N) }))
+    .filter(s => s.rows.length > 5);
+  const el = document.getElementById(elId);
+  if (!series.length) { el.innerHTML = ""; return; }
+  const dates = [...new Set(series.flatMap(s => s.rows.map(r => r.date)))].sort().slice(-US_VIEW_N);
+  const W = chartW(), H = chartH(230), padT = 34, padB = 22, padR = 52;
+  const n = dates.length, plotW = W - PAD.L - padR, plotH = H - padT - padB, step = plotW / n;
+  const cx = i => PAD.L + step * (i + 0.5), idx = new Map(dates.map((d, i) => [d, i]));
+  series.forEach(s => { const base = s.rows[0].close; s.pct = s.rows.map(r => ({ i: idx.get(r.date), v: (r.close / base - 1) * 100 })).filter(p => p.i !== undefined); });
+  const all = series.flatMap(s => s.pct.map(p => p.v));
+  const lo = Math.min(0, ...all) - 1, hi = Math.max(0, ...all) + 1;
+  const y = v => padT + (1 - (v - lo) / (hi - lo)) * plotH;
+  let svg = `<text x="${W / 2}" y="18" font-size="${titleFs(W)}" fill="#8fb4ff" text-anchor="middle" font-weight="700">美股指數近 ${n} 個交易日累積漲跌幅（` +
+    series.map(s => `<tspan fill="${s.color}">${s.name.replace("工業", "")}</tspan>`).join("／") + `）</text>`;
+  niceTicks(lo, hi, 4).forEach(t => {
+    svg += `<line x1="${PAD.L}" y1="${y(t).toFixed(1)}" x2="${W - padR}" y2="${y(t).toFixed(1)}" stroke="${t === 0 ? "#6b7588" : "#2a3442"}" stroke-width="1"/>`;
+    svg += `<text x="${PAD.L - 6}" y="${(y(t) + 3).toFixed(1)}" font-size="10" fill="#a3adbd" text-anchor="end">${t.toFixed(0)}%</text>`;
+  });
+  series.forEach(s => {
+    svg += `<polyline points="${s.pct.map(p => `${cx(p.i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ")}" fill="none" stroke="${s.color}" stroke-width="1.8"/>`;
+    const lp = lastOf(s.pct);
+    svg += `<text x="${(cx(lp.i) + 6).toFixed(1)}" y="${(y(lp.v) + 3).toFixed(1)}" font-size="10" fill="${s.color}">${signed(lp.v, 1)}%</text>`;
+  });
+  svg += xLabelsSvg(dates, padT, plotH, plotW, step);
+  el.innerHTML = `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" xmlns="${svgNS}">${svg}</svg>`;
+}
+
+function vixLevel(v) {
+  if (v >= 30) return { level: "VIX 恐慌", color: "#ff5c5c", text: "VIX 在 30 以上，美股市場恐慌，台股通常也會受到波及、波動放大；但極度恐慌也常出現在階段低點附近。" };
+  if (v >= 20) return { level: "VIX 緊張", color: "#f39c4a", text: "VIX 在 20～30，市場情緒偏緊張，留意美股與台股的波動加大。" };
+  if (v >= 15) return { level: "VIX 正常", color: "#8fb4ff", text: "VIX 在 15～20，市場情緒正常。" };
+  return { level: "VIX 平靜", color: "#3ecf74", text: "VIX 在 15 以下，市場情緒平靜樂觀；過低時也代表投資人較少避險，要留意突發利空。" };
+}
+
+function renderHomeIndexes(data) {
+  const note = document.getElementById("usIdxNote"), rsiNote = document.getElementById("rsiNote");
+  if (!data) {
+    note.innerHTML = `<div class="info-box">美股指數暫時抓不到（本機 data/us_index 沒有資料，FinMind 也沒回應），稍後再試</div>`;
+    rsiNote.innerHTML = `<div class="info-box">加權指數資料暫時抓不到，無法計算 RSI</div>`;
+    document.getElementById("usIdxChartDiv").innerHTML = document.getElementById("rsiChartDiv").innerHTML = "";
+    return;
+  }
+  const up = "#ff7a7a", down = "#5fe08f";
+  const tiles = US_IDX.map(x => {
+    const rows = data.us[x.id] || [];
+    if (rows.length < 2) return metricHtml(x.name, "—", "無資料");
+    const last = lastOf(rows), prev = rows[rows.length - 2];
+    const chg = (last.close / prev.close - 1) * 100, pts = last.close - prev.close;
+    const val = x.id === "^VIX" ? last.close.toFixed(2) : Math.round(last.close).toLocaleString();
+    return metricHtml(x.name, val, `${signed(pts, x.id === "^VIX" ? 2 : 0)}（${signed(chg, 2)}%）｜${last.date.slice(5)}`, chg >= 0 ? up : down);
+  }).join("");
+  const vix = data.us["^VIX"] || [], sox = data.us["^SOX"] || [];
+  let html = `<div class="metric-grid">${tiles}</div>`;
+  if (vix.length) {
+    const lv = vixLevel(lastOf(vix).close);
+    html += verdictHtml(lv, "😱") + `<div class="chip-box">${lv.text}</div>`;
+  }
+  if (sox.length >= 2) {
+    const c = (lastOf(sox).close / sox[sox.length - 2].close - 1) * 100;
+    html += `<div class="item-row">🔌 費半前一交易日 ${signed(c, 2)}%：${c >= 2 ? "大漲，台股電子權值股今天開盤偏多" : c <= -2 ? "大跌，台股電子權值股今天開盤容易承壓" : "變動不大，對台股電子股影響有限"}。</div>`;
+  }
+  note.innerHTML = html;
+  renderUsIdxChartSVG("usIdxChartDiv", data.us);
+
+  const rsi = calcTaiexRsi(data.taiex);
+  if (!rsi) { document.getElementById("rsiChartDiv").innerHTML = ""; rsiNote.innerHTML = `<div class="info-box">加權指數資料不足，無法計算 RSI</div>`; return; }
+  renderRsiChartSVG("rsiChartDiv", rsi.view);
+  const prev = rsi.view[rsi.view.length - 2];
+  rsiNote.innerHTML =
+    `<div class="metric-grid">` +
+    metricHtml("加權指數", Math.round(rsi.last.close).toLocaleString(), prev ? `${signed(rsi.last.close - prev.close, 0)}（${signed((rsi.last.close / prev.close - 1) * 100, 2)}%）｜${rsi.last.date.slice(5)}` : rsi.last.date.slice(5),
+      prev && rsi.last.close < prev.close ? down : up) +
+    metricHtml("RSI6（短線）", rsi.last.r6.toFixed(1), prev ? `前一日 ${prev.r6.toFixed(1)}` : "") +
+    metricHtml("RSI14（中線）", rsi.last.r14.toFixed(1), prev ? `前一日 ${prev.r14.toFixed(1)}` : "") +
+    metricHtml(`近 ${rsi.view.length} 日 RSI14 區間`, `${Math.min(...rsi.view.map(r => r.r14)).toFixed(0)}～${Math.max(...rsi.view.map(r => r.r14)).toFixed(0)}`, "") +
+    `</div>` + verdictHtml(rsi, "📶") + `<div class="chip-box">${rsi.text}</div>`;
+}
+
+// 首頁大盤區：開頁就載入，不需輸入股票
+let homeMarket = { mkt: null, mm: null, idx: null };
+function redrawMarketHome() { renderHomeIndexes(homeMarket.idx); renderMarketMargin(homeMarket.mkt, homeMarket.mm); renderInstFlow(); }
+async function loadMarketHome() {
+  renderInstFlow();
+  fetchHomeIndexes()
+    .then(d => { homeMarket.idx = d; })
+    .catch(e => console.error("抓取首頁指標失敗：", e))
+    .finally(() => renderHomeIndexes(homeMarket.idx));
+  try {
+    const rows = await fetchMarketMargin();
+    Object.assign(homeMarket, { mkt: calcMarketMargin(rows), mm: calcMarketMaintenance(rows) });
+  } catch (e) {
+    console.error("抓取大盤融資失敗：", e);
+  }
+  renderMarketMargin(homeMarket.mkt, homeMarket.mm);
+}
+
+let redrawCharts = () => redrawMarketHome();
 let lastChartW = 0;
 // iOS 捲動時網址列伸縮也會觸發 resize，只在寬度真的改變時才重畫
 window.addEventListener("resize", () => {
@@ -3516,6 +3756,8 @@ document.getElementById("analyzeBtn").addEventListener("click", () => runAnalysi
 document.getElementById("stockIdInput").addEventListener("keydown", e => {
   if (e.key === "Enter") runAnalysis();
 });
+
+loadMarketHome();
 
 // 網址參數自動帶入＋自動分析（例如：技術籌碼分析工具.html?stock=2330）
 (function autoRunFromUrl() {
